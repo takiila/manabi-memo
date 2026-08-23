@@ -11,7 +11,7 @@ import {
   refreshGeneratedStudyTasks,
 } from "../app/campus-model.ts";
 import { parseCampusAccessMode } from "../lib/server/campus-access-policy.ts";
-import { parseAllowedAccountEmails } from "../lib/server/account-access-policy.ts";
+import { allowedAccountConfigurationValid, parseAllowedAccountEmails } from "../lib/server/account-access-policy.ts";
 
 test("2〜3人運営のメール許可リストを正規化して重複排除する", () => {
   assert.deepEqual(parseAllowedAccountEmails(" A@example.test, b@example.test;A@EXAMPLE.TEST\n c@example.test "), [
@@ -20,6 +20,8 @@ test("2〜3人運営のメール許可リストを正規化して重複排除す
     "c@example.test",
   ]);
   assert.deepEqual(parseAllowedAccountEmails(undefined), []);
+  assert.equal(allowedAccountConfigurationValid("a@example.test,b@example.test,c@example.test"), true);
+  assert.equal(allowedAccountConfigurationValid("a@example.test,b@example.test,c@example.test,d@example.test"), false);
 });
 
 test("少人数公開用Campusアクセスは明示設定時だけ全認証ユーザーへ開く", () => {

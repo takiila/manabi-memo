@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readdir, rm } from "node:fs/promises";
 import { createServer } from "node:net";
+import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -60,6 +61,121 @@ try {
   assert.equal(health.body.pdfStorage, "local-files");
   assert.equal(health.body.directPdfTransfer, false);
   assert.equal(health.body.campusAccess, "authenticated");
+
+  const blockedSharedCalendar = await jsonRequest(`${origin}/api/shared-calendar`, { headers: outsider });
+  assert.equal(blockedSharedCalendar.response.status, 403);
+
+  const createdSharedCalendar = await jsonRequest(`${origin}/api/shared-calendar`, {
+    method: "POST",
+    headers: owner,
+    body: JSON.stringify({
+      action: "create",
+      kind: "assignment",
+      termLabel: "2026年度 前期",
+      courseLabel: "統計学",
+      title: "共有レポート",
+      dueAt: "2026-09-10T17:00",
+      note: "提出方法を全員で確認",
+    }),
+  });
+  assert.equal(createdSharedCalendar.response.status, 201, JSON.stringify(createdSharedCalendar.body));
+  assert.equal(createdSharedCalendar.body.members.length, 3);
+  const sharedEvent = createdSharedCalendar.body.events.find((event) => event.title === "共有レポート");
+  assert.equal(typeof sharedEvent.id, "string");
+
+  const ownerCompletion = await jsonRequest(`${origin}/api/shared-calendar`, {
+    method: "POST",
+    headers: owner,
+    body: JSON.stringify({ action: "set-completion", eventId: sharedEvent.id, completed: true, memberEmail: "third@example.test" }),
+  });
+  assert.deepEqual(ownerCompletion.body.events[0].completions.map((item) => item.email), ["owner@example.test"]);
+  const otherCompletion = await jsonRequest(`${origin}/api/shared-calendar`, {
+    method: "POST",
+    headers: other,
+    body: JSON.stringify({ action: "set-completion", eventId: sharedEvent.id, completed: true }),
+  });
+  assert.equal(otherCompletion.response.status, 200);
+
+  const sharedOnThirdDevice = await jsonRequest(`${origin}/api/shared-calendar`, { headers: third });
+  assert.equal(sharedOnThirdDevice.response.status, 200);
+  assert.deepEqual(sharedOnThirdDevice.body.events[0].completions.map((item) => item.email).sort(), ["other@example.test", "owner@example.test"]);
+
+  const updatedSharedCalendar = await jsonRequest(`${origin}/api/shared-calendar`, {
+    method: "POST",
+    headers: other,
+    body: JSON.stringify({
+      action: "update",
+      eventId: sharedEvent.id,
+      expectedUpdatedAt: sharedEvent.updatedAt,
+      kind: "assignment",
+      termLabel: "2026年度 前期",
+      courseLabel: "統計学",
+      title: "共有レポート",
+      dueAt: "2026-09-11T17:00",
+      note: "締切変更を全員で確認",
+    }),
+  });
+  assert.equal(updatedSharedCalendar.response.status, 200, JSON.stringify(updatedSharedCalendar.body));
+  const updatedSharedEvent = updatedSharedCalendar.body.events[0];
+  assert.equal(updatedSharedEvent.updatedBy, "other@example.test");
+  assert.equal(updatedSharedEvent.note, "締切変更を全員で確認");
+
+  const staleSharedUpdate = await jsonRequest(`${origin}/api/shared-calendar`, {
+    method: "POST",
+    headers: owner,
+    body: JSON.stringify({
+      action: "update",
+      eventId: sharedEvent.id,
+      expectedUpdatedAt: sharedEvent.updatedAt,
+      kind: "check",
+      termLabel: "2026年度 前期",
+      courseLabel: "統計学",
+      title: "古い画面からの更新",
+      dueAt: "2026-09-12T17:00",
+      note: "競合する内容",
+    }),
+  });
+  assert.equal(staleSharedUpdate.response.status, 409);
+  assert.equal(staleSharedUpdate.body.conflict, true);
+
+  const trashedSharedCalendar = await jsonRequest(`${origin}/api/shared-calendar`, {
+    method: "POST",
+    headers: third,
+    body: JSON.stringify({ action: "trash", eventId: sharedEvent.id, expectedUpdatedAt: updatedSharedEvent.updatedAt }),
+  });
+  assert.equal(trashedSharedCalendar.response.status, 200);
+  const trashedSharedEvent = trashedSharedCalendar.body.events[0];
+  assert.equal(typeof trashedSharedEvent.deletedAt, "string");
+  const sharedTrashOnOtherDevice = await jsonRequest(`${origin}/api/shared-calendar`, { headers: other });
+  assert.equal(sharedTrashOnOtherDevice.body.events[0].deletedAt, trashedSharedEvent.deletedAt);
+
+  const restoredSharedCalendar = await jsonRequest(`${origin}/api/shared-calendar`, {
+    method: "POST",
+    headers: owner,
+    body: JSON.stringify({ action: "restore", eventId: sharedEvent.id, expectedUpdatedAt: trashedSharedEvent.updatedAt }),
+  });
+  assert.equal(restoredSharedCalendar.response.status, 200);
+  assert.equal(restoredSharedCalendar.body.events[0].deletedAt, null);
+  assert.deepEqual(restoredSharedCalendar.body.events[0].completions.map((item) => item.email).sort(), ["other@example.test", "owner@example.test"]);
+
+  const expiredTrash = await jsonRequest(`${origin}/api/shared-calendar`, {
+    method: "POST",
+    headers: third,
+    body: JSON.stringify({ action: "trash", eventId: sharedEvent.id, expectedUpdatedAt: restoredSharedCalendar.body.events[0].updatedAt }),
+  });
+  assert.equal(expiredTrash.response.status, 200);
+  const expiredEvent = expiredTrash.body.events[0];
+  const integrationDatabase = new DatabaseSync(databasePath, { timeout: 5000 });
+  integrationDatabase.prepare("UPDATE shared_calendar_events SET deleted_at = ? WHERE id = ?").run(Date.now() - 31 * 24 * 60 * 60 * 1000, sharedEvent.id);
+  integrationDatabase.close();
+  const rejectedExpiredRestore = await jsonRequest(`${origin}/api/shared-calendar`, {
+    method: "POST",
+    headers: owner,
+    body: JSON.stringify({ action: "restore", eventId: sharedEvent.id, expectedUpdatedAt: expiredEvent.updatedAt }),
+  });
+  assert.equal(rejectedExpiredRestore.response.status, 409);
+  const afterExpiredRestore = await jsonRequest(`${origin}/api/shared-calendar`, { headers: owner });
+  assert.equal(afterExpiredRestore.body.events.length, 0);
 
   const firstPdf = new TextEncoder().encode("%PDF-1.4\n% manabi sync integration v1\n%%EOF\n");
   const firstState = stateFor("v1");
@@ -252,7 +368,7 @@ try {
   const deletionMarker = await jsonRequest(`${origin}/api/sync/state`, { headers: owner });
   assert.equal(deletionMarker.body.deleted, true);
 
-  process.stdout.write("sync API integration: 3 users x PC/phone, Campus/CMTR graduation data, PDF integrity, conflict cleanup, account isolation, deletion passed\n");
+  process.stdout.write("sync API integration: 3 users x PC/phone, shared calendar/completion/trash, Campus/CMTR graduation data, PDF integrity, conflict cleanup, account isolation, deletion passed\n");
 } finally {
   server.kill();
   await Promise.race([

@@ -6,6 +6,7 @@
 |---|---|---|
 | `/` 時間割・講義・作業・見返し・設定 | `app/page.tsx` | まなびメモ本体、端末保存、検索、バックアップ |
 | `/` Campus Muster | `app/campus-module.tsx` | 任意表示の大学生活管理 |
+| `/` 共有カレンダー | `app/shared-campus-calendar.tsx` | 許可メンバーの課題・確認事項・予定と本人別完了 |
 | `/` アカウント・同期 | `app/account-sync.tsx` | Firebase、初回同期、競合、PDF同期 |
 | `/terms` | `app/terms/page.tsx` | 利用規約 |
 | `/privacy` | `app/privacy/page.tsx` | プライバシーポリシー |
@@ -19,6 +20,7 @@
 | SessionRecord | `courseId`, 本文、PDF情報、抽出本文 | IndexedDB、同期state |
 | Memo | `sessionId`, `courseId`, タグ、位置、ピン、復習 | IndexedDB、同期state |
 | CampusState | 授業、提出物、試験、出席、学習タスク、GPA等 | IndexedDB、同期state |
+| SharedCalendar | 種類、学期、科目、期限、共有メモ、メンバー別完了 | サーバーDB、利用者別localStorageキャッシュ |
 | PDF本体 | Session ID、SHA-256、ノート版 | IndexedDB、Cloudflare R2 / Private Vercel Blob / ローカルファイル |
 | 同期メタデータ | Account ID、revision、fingerprint、device ID | localStorage、サーバーDB |
 
@@ -30,6 +32,8 @@
 4. 両方に異なる内容がある場合は自動上書きせず、残す側を選ぶ。
 5. 状態保存後、対応するノート版のPDFだけをSHA-256付きで `staging/` へ保存する。R2 / S3 / Vercel Blobでは短時間の署名URLでブラウザから直接転送し、確定前にサーバーが再検証して `accounts/` へコピーする。未確定の一時PDFはAPI掃除とR2 lifecycleの二重で回収する。
 6. オフライン中は端末保存を続け、復帰後にrevisionを再確認する。
+
+共有カレンダーは個人の同期stateとは別領域です。`ALLOWED_ACCOUNT_EMAILS` の2人以上だけが同じ予定を読み書きでき、完了行はFirebaseで認証した本人のメールに固定します。予定の更新は `updatedAt` を使った楽観的ロックで競合を止め、削除は30日間のごみ箱を経て完全削除します。端末キャッシュはオフライン表示専用で、オフライン変更は受け付けません。
 
 現在のクラウドstateは互換性を優先したbundle単位です。将来entity単位へ移す場合も、schemaVersionと参照IDを保つ移行処理が必要です。
 

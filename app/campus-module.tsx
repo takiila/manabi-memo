@@ -37,6 +37,7 @@ import {
   refreshGeneratedStudyTasks,
   sortStudyTasks,
 } from "./campus-model";
+import SharedCampusCalendar from "./shared-campus-calendar";
 
 export type CampusCourse = {
   id: string;
@@ -246,7 +247,10 @@ export default function CampusModule({
       )}
 
       {section === "calendar" && (
-        <CampusCalendar month={calendarMonth} setMonth={setCalendarMonth} assignments={assignments} exams={exams} tasks={normalized.planningProfile.showStudyOnCalendar ? tasks : []} courseName={courseName} />
+        <>
+          <CampusCalendar month={calendarMonth} setMonth={setCalendarMonth} assignments={assignments} exams={exams} tasks={normalized.planningProfile.showStudyOnCalendar ? tasks : []} courseName={courseName} />
+          <SharedCampusCalendar termLabel={termId} courseOptions={activeCourses.map((course) => course.title)} />
+        </>
       )}
 
       {section === "study" && (
@@ -398,9 +402,9 @@ function CampusSettings({ state, onChange, hasLegacyData, onImportLegacy }: { st
         <button className="campus-secondary full" type="button" disabled={!hasLegacyData} onClick={onImportLegacy}>{hasLegacyData ? "旧データを取り込む" : "旧データは見つかりませんでした"}</button>
       </section>
       <section className="campus-panel settings-panel">
-        <div className="campus-panel-heading"><span><LockKeyhole size={19} /></span><h2>限定ベータ</h2></div>
-        <p>現在は招待コードで有効化した端末だけに表示されます。アカウント同期と小グループ共有は、データ構造の検証後に追加します。</p>
-        <dl className="beta-details"><div><dt>保存</dt><dd>この端末</dd></div><div><dt>学習支援</dt><dd>任意</dd></div><div><dt>公開共有</dt><dd>使用しない</dd></div></dl>
+        <div className="campus-panel-heading"><span><LockKeyhole size={19} /></span><h2>許可メンバー共有</h2></div>
+        <p>個人のノート・PDF・時間割はアカウントごとに分離したまま、共有カレンダーだけを許可された2〜3人で確認できます。</p>
+        <dl className="beta-details"><div><dt>個人データ</dt><dd>アカウントごと</dd></div><div><dt>共有対象</dt><dd>課題・予定・完了</dd></div><div><dt>公開共有</dt><dd>使用しない</dd></div></dl>
       </section>
     </div>
   </div>;

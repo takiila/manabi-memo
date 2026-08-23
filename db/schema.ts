@@ -88,6 +88,34 @@ export const sqliteSchema = [
     attempts INTEGER NOT NULL,
     window_started_at INTEGER NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS shared_calendar_member_profiles (
+    email TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    last_seen_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS shared_calendar_events (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    term_label TEXT NOT NULL,
+    course_label TEXT NOT NULL,
+    title TEXT NOT NULL,
+    due_at TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    created_by_email TEXT NOT NULL,
+    updated_by_email TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+  )`,
+  "CREATE INDEX IF NOT EXISTS shared_calendar_events_due_idx ON shared_calendar_events (deleted_at, due_at)",
+  `CREATE TABLE IF NOT EXISTS shared_calendar_completions (
+    event_id TEXT NOT NULL,
+    member_email TEXT NOT NULL,
+    completed_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (event_id, member_email)
+  )`,
+  "CREATE INDEX IF NOT EXISTS shared_calendar_completions_event_idx ON shared_calendar_completions (event_id)",
 ] as const;
 
 export const postgresSchema = sqliteSchema.map((statement) =>

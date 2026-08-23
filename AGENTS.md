@@ -12,6 +12,8 @@
 - メールアドレスだけでFirebase、Google、旧ChatGPTの利用者を自動統合しない。
 - PDF同期は状態リビジョン、ノート版、SHA-256の検証を外さない。
 - Campus Musterは任意表示とし、初期状態で主画面へ強制表示しない。
+- 共有カレンダーは `ALLOWED_ACCOUNT_EMAILS` の2〜3人だけに開き、各メンバーの完了状態は認証中の本人だけが変更できるようにする。
+- 共有カレンダーと個人のノート・PDF・GPA・卒業要件の保存領域を混同しない。
 - `courseId`、`termId`、`sourceType`、`sourceId`などの参照IDを移行時に壊さない。
 - IndexedDBと旧localStorage保存形式の後方互換を維持する。
 - 公開中のChatGPT Siteを、このリポジトリから自動更新・削除しない。
