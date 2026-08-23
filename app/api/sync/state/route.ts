@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { queryAll, queryOne, withTransaction } from "@/lib/server/database";
-import { objectStore } from "@/lib/server/object-store";
+import { inspectStoredObject, objectStore, storedObjectSize } from "@/lib/server/object-store";
 import { isSameOriginRequest } from "@/lib/server/request-security";
 import { accountForRequest } from "../../../server-auth-response";
 import { pdfVersionsFromState } from "../../../pdf-sync-model";
@@ -14,6 +14,7 @@ import {
 
 const MAX_STATE_BYTES = 4_500_000;
 const MAX_PDF_IDS = 1000;
+const STALE_TRANSACTION_MS = 24 * 60 * 60 * 1000;
 const DEVICE_ID_PATTERN = /^[a-zA-Z0-9._:-]{8,120}$/;
 const TRANSACTION_ID_PATTERN = /^[a-zA-Z0-9-]{16,100}$/;
 
@@ -58,6 +59,11 @@ type TransactionPdfRow = {
 export async function GET(request: Request) {
   const auth = await accountForRequest(request);
   if ("response" in auth) return auth.response;
+  try {
+    await cleanupExpiredTransactions(auth.account.id, Date.now() - STALE_TRANSACTION_MS);
+  } catch {
+    // Authenticated reads remain available even if best-effort cleanup fails.
+  }
   const row = await queryOne<StateRow>(
     "SELECT revision, schema_version, payload, updated_at, updated_by, deleted_at, pdf_manifest, sync_complete FROM synced_app_state WHERE user_id = ?",
     [auth.account.id],
@@ -187,6 +193,11 @@ async function prepareTransaction(accountId: string, body: TransactionBody) {
   const transactionId = crypto.randomUUID();
   const now = Date.now();
   try {
+    await cleanupExpiredTransactions(accountId, now - STALE_TRANSACTION_MS);
+  } catch {
+    // Stale-object cleanup is best effort and must not block a fresh sync.
+  }
+  try {
     const targetRevision = await withTransaction(async (transaction) => {
       const current = firstOrNull(await transaction.queryAll<{ revision: number; updated_at: number }>("SELECT revision, updated_at FROM synced_app_state WHERE user_id = ?", [accountId]));
       const currentRevision = current?.revision ?? 0;
@@ -222,8 +233,8 @@ async function commitTransaction(accountId: string, transactionId: string) {
   if (!sameManifest(manifest, rows, transactionRow.target_revision)) return json({ error: "PDFのアップロードが完了していません。", incomplete: true }, 409);
   try {
     for (const row of rows) {
-      const bytes = await objectBytes(row.object_key);
-      if (!bytes || bytes.byteLength !== row.size || await hashBytes(bytes) !== row.sha256) return json({ error: "PDF本体の整合性を確認できませんでした。", incomplete: true }, 409);
+      const object = await inspectStoredObject(row.object_key, row.size);
+      if (!object || object.tooLarge || object.size !== row.size || object.sha256 !== row.sha256) return json({ error: "PDF本体の整合性を確認できませんでした。", incomplete: true }, 409);
     }
   } catch {
     return json({ error: "PDF本体を確認できませんでした。" }, 503);
@@ -269,7 +280,10 @@ async function commitTransaction(accountId: string, transactionId: string) {
     });
   } catch (cause) {
     if (cause instanceof MissingTransactionError) return json({ error: "同期トランザクションが見つかりません。" }, 404);
-    if (cause instanceof SyncConflictError) return conflictResponse(cause.currentRevision, cause.updatedAt);
+    if (cause instanceof SyncConflictError) {
+      try { await abortPendingTransaction(accountId, transactionId); } catch { /* the transaction remains inaccessible and can be cleaned up later */ }
+      return conflictResponse(cause.currentRevision, cause.updatedAt);
+    }
     return json({ error: "クラウド同期を確定できませんでした。" }, 503);
   }
   const newObjects = new Set(rows.map((row) => row.object_key));
@@ -277,6 +291,36 @@ async function commitTransaction(accountId: string, transactionId: string) {
     try { await objectStore().delete(key); } catch { /* DB commit is already a consistent snapshot; clean-up can be retried later. */ }
   }
   return json({ ok: true, transactionId, revision: transactionRow.target_revision, committed: true });
+}
+
+async function cleanupExpiredTransactions(accountId: string, updatedBefore: number) {
+  const expired = await queryAll<{ id: string }>(
+    "SELECT id FROM sync_transactions WHERE user_id = ? AND status = 'pending' AND updated_at < ?",
+    [accountId, updatedBefore],
+  );
+  for (const transaction of expired) await abortPendingTransaction(accountId, transaction.id, updatedBefore);
+}
+
+async function abortPendingTransaction(accountId: string, transactionId: string, updatedBefore?: number) {
+  const aborted = await withTransaction(async (transaction) => {
+    const result = updatedBefore === undefined
+      ? await transaction.execute(
+        "UPDATE sync_transactions SET status = 'aborted', updated_at = ? WHERE id = ? AND user_id = ? AND status = 'pending'",
+        [Date.now(), transactionId, accountId],
+      )
+      : await transaction.execute(
+        "UPDATE sync_transactions SET status = 'aborted', updated_at = ? WHERE id = ? AND user_id = ? AND status = 'pending' AND updated_at < ?",
+        [Date.now(), transactionId, accountId, updatedBefore],
+      );
+    if (result.changes !== 1) return false;
+    await transaction.execute(
+      "DELETE FROM sync_transaction_pdfs WHERE transaction_id = ? AND user_id = ?",
+      [transactionId, accountId],
+    );
+    return true;
+  });
+  if (!aborted) return;
+  await objectStore().deletePrefix(`${accountId}/transactions/${encodeURIComponent(transactionId)}/`);
 }
 
 function parseStateBody(body: PutBody) {
@@ -319,25 +363,13 @@ async function inspectPdfSet(userId: string, revision: number, state: unknown) {
   const metadata: PdfSyncMetadata[] = rows.map((row) => ({ sessionId: row.session_id, size: row.size, sha256: row.sha256, stateRevision: row.state_revision, noteVersion: row.note_version }));
   if (!isCommittedPdfMetadata(state, revision, metadata)) return { valid: false as const, pdfs: [] };
   for (const row of rows) {
-    const bytes = await objectBytes(row.object_key);
-    if (!bytes || bytes.byteLength !== row.size || await hashBytes(bytes) !== row.sha256) return { valid: false as const, pdfs: [] };
+    if (await storedObjectSize(row.object_key) !== row.size) return { valid: false as const, pdfs: [] };
   }
   return { valid: true as const, pdfs: rows.map(toPdfMetadata) };
 }
 
 async function pendingTransaction(userId: string) {
   return queryOne<{ id: string; target_revision: number }>("SELECT id, target_revision FROM sync_transactions WHERE user_id = ? AND status = 'pending' ORDER BY updated_at DESC LIMIT 1", [userId]);
-}
-
-async function objectBytes(key: string) {
-  const object = await objectStore().get(key);
-  if (!object) return null;
-  return new Response(object.body).arrayBuffer();
-}
-
-async function hashBytes(bytes: ArrayBuffer) {
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function toPdfMetadata(row: PdfRow) {

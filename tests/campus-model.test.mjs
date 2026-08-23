@@ -96,6 +96,16 @@ test("旧CMTRの学期・授業IDと時間割配置を保った移行候補を�
   assert.equal(values.has("cmtr:courses"), true);
 });
 
+test("旧CMTRの未知の学期IDも学期一覧へ残して表示不能にしない", () => {
+  const values = new Map([
+    ["cmtr:assignments", JSON.stringify([{ id: "assignment-unknown-term", termId: "legacy-special-term", title: "特別課題", dueISO: "2026-09-01" }])],
+  ]);
+  const bundle = readLegacyCampusBundle({ getItem: (key) => values.get(key) ?? null }, "2026年度 前期");
+  assert.ok(bundle);
+  assert.equal(bundle.campus.assignments[0].termId, "legacy-special-term");
+  assert.equal(bundle.termNames.includes("legacy-special-term"), true);
+});
+
 test("科目別評価計画から累積GPAを算出する", () => {
   const profile = normalizeCampusState({ gpaProfile: {
     currentGpa: 3,

@@ -223,7 +223,8 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
         setPanelOpen(true);
         return;
       }
-      const pdfMeta = await uploadPdfs(remote.pdfs, remote.revision);
+      const pdfMeta = await inspectLocalPdfs(remote.pdfs, remote.revision);
+      if (pdfMeta.needsUpload) return void await uploadLocal(remote.revision);
       const next = makeMeta(account.id, remote.revision, localFingerprint, storedMeta, pdfMeta.hashes, pdfMeta.tokens);
       persistMeta(next);
       setMeta(next);
@@ -267,14 +268,19 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
         const entry = entriesById.get(manifest.sessionId);
         if (!entry) throw new Error(`この端末にPDF本体がありません。再度追加してから同期してください: ${manifest.sessionId}`);
         setProgress(`PDFを同期しています ${index + 1}/${pending.manifests.length}`);
-        const response = await retryAuthenticatedFetch(`/api/sync/pdf?sessionId=${encodeURIComponent(manifest.sessionId)}&transactionId=${encodeURIComponent(pending.transactionId)}`, {
-          method: "PUT",
-          headers: { "content-type": "application/pdf", "x-content-sha256": manifest.sha256, "x-state-revision": String(pending.targetRevision), "x-note-version": encodeURIComponent(manifest.noteVersion) },
-          body: entry.blob,
-        });
-        const result = await response.json().catch(() => ({})) as { error?: string; conflict?: boolean };
-        if (response.status === 409 || result.conflict) return void await showSyncConflict();
-        if (!response.ok) throw new Error(result.error ?? `PDFを同期できませんでした: ${manifest.sessionId}`);
+        const transfer = { ...manifest, transactionId: pending.transactionId, stateRevision: pending.targetRevision };
+        const direct = await uploadPdfDirectly(transfer, entry.blob);
+        if (direct.conflict) return void await showSyncConflict();
+        if (!direct.used) {
+          const response = await retryAuthenticatedFetch(`/api/sync/pdf?sessionId=${encodeURIComponent(manifest.sessionId)}&transactionId=${encodeURIComponent(pending.transactionId)}`, {
+            method: "PUT",
+            headers: { "content-type": "application/pdf", "x-content-sha256": manifest.sha256, "x-state-revision": String(pending.targetRevision), "x-note-version": encodeURIComponent(manifest.noteVersion) },
+            body: entry.blob,
+          });
+          const result = await response.json().catch(() => ({})) as { error?: string; conflict?: boolean };
+          if (response.status === 409 || result.conflict) return void await showSyncConflict();
+          if (!response.ok) throw new Error(result.error ?? `PDFを同期できませんでした: ${manifest.sessionId}`);
+        }
       }
       const commitResponse = await retryAuthenticatedFetch("/api/sync/state", {
         method: "POST",
@@ -297,14 +303,14 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
     }
   }
 
-  async function uploadPdfs(remotePdfs: CloudPdf[], stateRevision: number) {
+  async function inspectLocalPdfs(remotePdfs: CloudPdf[], stateRevision: number) {
     const entries = await loadAllPdfs();
     const remoteById = new Map(remotePdfs.map((item) => [item.sessionId, item]));
     const tokens = pdfTokens(currentState);
     const hashes: Record<string, string> = {};
     const entriesById = new Map(entries.map((entry) => [entry.id, entry]));
     const ids = pdfSessionIds(currentState);
-    let completed = 0;
+    let needsUpload = false;
     for (const id of ids) {
       const remote = remoteById.get(id);
       const entry = entriesById.get(id);
@@ -313,20 +319,10 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
       const sha256 = await hashBlob(entry.blob);
       hashes[id] = sha256;
       if (!remote || remote.sha256 !== sha256 || remote.size !== entry.blob.size || remote.noteVersion !== tokens[id] || remote.stateRevision !== stateRevision) {
-        setProgress(`PDFを同期しています ${completed + 1}/${ids.length}`);
-        const response = await retryAuthenticatedFetch(`/api/sync/pdf?sessionId=${encodeURIComponent(id)}`, {
-          method: "PUT",
-          headers: { "content-type": "application/pdf", "x-content-sha256": sha256, "x-state-revision": String(stateRevision), "x-note-version": encodeURIComponent(tokens[id] ?? "") },
-          body: entry.blob,
-        });
-        if (!response.ok) {
-          const result = await response.json().catch(() => ({})) as { error?: string };
-          throw new Error(result.error ?? `PDFを同期できませんでした: ${id}`);
-        }
+        needsUpload = true;
       }
-      completed += 1;
     }
-    return { hashes, tokens };
+    return { hashes, tokens, needsUpload };
   }
 
   async function downloadCloud(remote = cloud) {
@@ -348,9 +344,15 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
           throw new Error(`ノートの更新版に対応するPDFを確認できませんでした: ${item.sessionId}`);
         }
         setProgress(`PDFを受け取っています ${index + 1}/${remote.pdfs.length}`);
-        const response = await authenticatedFetch(`/api/sync/pdf?sessionId=${encodeURIComponent(item.sessionId)}`, { cache: "no-store" });
-        if (!response.ok) throw new Error(`PDFを受け取れませんでした: ${item.sessionId}`);
-        const blob = await response.blob();
+        const directBlob = await downloadPdfDirectly(item);
+        let blob: Blob;
+        if (directBlob) {
+          blob = directBlob;
+        } else {
+          const response = await authenticatedFetch(`/api/sync/pdf?sessionId=${encodeURIComponent(item.sessionId)}`, { cache: "no-store" });
+          if (!response.ok) throw new Error(`PDFを受け取れませんでした: ${item.sessionId}`);
+          blob = await response.blob();
+        }
         const sha256 = await hashBlob(blob);
         if (sha256 !== item.sha256) throw new Error(`PDFの整合性を確認できませんでした: ${item.sessionId}`);
         pdfs.push({ id: item.sessionId, blob });
@@ -631,12 +633,95 @@ async function hashBlob(blob: Blob) {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+type DirectUploadInput = {
+  transactionId: string;
+  sessionId: string;
+  size: number;
+  sha256: string;
+  stateRevision: number;
+  noteVersion: string;
+};
+
+async function uploadPdfDirectly(input: DirectUploadInput, blob: Blob) {
+  const prepareResponse = await retryAuthenticatedFetch("/api/sync/pdf/transfer", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ operation: "prepare-upload", ...input }),
+  });
+  const prepared = await prepareResponse.json().catch(() => ({})) as {
+    direct?: boolean;
+    uploadUrl?: string;
+    error?: string;
+    conflict?: boolean;
+  };
+  if (prepareResponse.status === 409 || prepared.conflict) return { used: true, conflict: true };
+  if (!prepareResponse.ok) throw new Error(prepared.error ?? `PDFを同期できませんでした: ${input.sessionId}`);
+  if (!prepared.direct) return { used: false, conflict: false };
+  if (!prepared.uploadUrl) throw new Error("PDFの安全なアップロード先を確認できませんでした。");
+
+  const uploadResponse = await retryTransient(() => fetch(prepared.uploadUrl!, {
+    method: "PUT",
+    headers: { "content-type": "application/pdf" },
+    body: blob,
+    cache: "no-store",
+  }), { maxAttempts: 3, delay: retryDelay });
+
+  const completeResponse = await retryAuthenticatedFetch("/api/sync/pdf/transfer", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ operation: "complete-upload", ...input }),
+  });
+  const completed = await completeResponse.json().catch(() => ({})) as { ok?: boolean; error?: string; conflict?: boolean };
+  if (completed.conflict) return { used: true, conflict: true };
+  if (!completeResponse.ok || !completed.ok) {
+    const uploadMessage = uploadResponse.ok ? "" : `（ストレージ応答: ${uploadResponse.status}）`;
+    throw new Error(completed.error ?? `PDFのアップロードを確定できませんでした。${uploadMessage}`);
+  }
+  return { used: true, conflict: false };
+}
+
+async function downloadPdfDirectly(item: CloudPdf) {
+  const prepareResponse = await retryAuthenticatedFetch("/api/sync/pdf/transfer", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ operation: "prepare-download", sessionId: item.sessionId }),
+  });
+  const prepared = await prepareResponse.json().catch(() => ({})) as {
+    direct?: boolean;
+    downloadUrl?: string;
+    size?: number;
+    sha256?: string;
+    stateRevision?: number;
+    noteVersion?: string;
+    error?: string;
+  };
+  if (!prepareResponse.ok) throw new Error(prepared.error ?? `PDFを受け取れませんでした: ${item.sessionId}`);
+  if (!prepared.direct) return null;
+  if (
+    !prepared.downloadUrl
+    || prepared.size !== item.size
+    || prepared.sha256 !== item.sha256
+    || prepared.stateRevision !== item.stateRevision
+    || prepared.noteVersion !== item.noteVersion
+  ) throw new Error(`PDFの転送情報がクラウド状態と一致しませんでした: ${item.sessionId}`);
+  const response = await retryTransient(() => fetch(prepared.downloadUrl!, { cache: "no-store" }), {
+    maxAttempts: 3,
+    delay: retryDelay,
+  });
+  if (!response.ok) throw new Error(`PDFを受け取れませんでした: ${item.sessionId}`);
+  const blob = await response.blob();
+  if (blob.size !== item.size) throw new Error(`PDFのサイズを確認できませんでした: ${item.sessionId}`);
+  return blob;
+}
+
+async function retryDelay(attempt: number) {
+  await new Promise((resolve) => window.setTimeout(resolve, 150 * (attempt + 1)));
+}
+
 async function retryAuthenticatedFetch(input: RequestInfo | URL, init: RequestInit, attempts = 3) {
   return retryTransient(() => authenticatedFetch(input, init), {
     maxAttempts: attempts,
-    delay: async (attempt) => {
-      await new Promise((resolve) => window.setTimeout(resolve, 150 * (attempt + 1)));
-    },
+    delay: retryDelay,
   });
 }
 

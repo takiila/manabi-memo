@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { execute, queryAll, queryOne } from "@/lib/server/database";
 import { objectStore } from "@/lib/server/object-store";
+import { MAX_PDF_BYTES } from "@/lib/server/pdf-transfer";
 import { isSameOriginRequest } from "@/lib/server/request-security";
 import { accountForRequest } from "../../../server-auth-response";
 import { matchesNotePdfVersion, pdfVersionsFromState } from "../../../pdf-sync-model";
 import { isCommittedPdfMetadata, normalizePdfManifest, type PdfSyncManifest } from "../../../sync-integrity-model";
 
-const MAX_PDF_BYTES = 75 * 1024 * 1024;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const TRANSACTION_ID_PATTERN = /^[a-zA-Z0-9-]{16,100}$/;
 type PdfRow = { session_id?: string; object_key: string; size: number; sha256: string; state_revision: number; note_version: string; updated_at?: number };

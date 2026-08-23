@@ -74,14 +74,21 @@ Vercelなど、実行時ファイルが永続化されない環境では外部Po
 ```dotenv
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE
 DATABASE_SSL=true
-DATABASE_POOL_SIZE=5
+DATABASE_POOL_SIZE=1
 ```
 
-必要なテーブルと索引は初回接続時に `db/schema.ts` から作成されます。
+VercelではNeonのpooled connection stringを使い、アプリ側プールは `1` にします。必要なテーブルと索引は初回接続時に `db/schema.ts` から作成されます。
 
 ### 同期PDF
 
-S3、Cloudflare R2、MinIOなどのS3互換ストレージを利用できます。未設定時はローカルファイル保存です。
+Vercel本番ではPrivate Vercel Blob Storeをプロジェクトへ接続します。ブラウザは5分だけ有効な署名URLを受け取り、PDFをBlobへ直接送受信します。これによりVercel Functionの4.5 MB上限を通さず、最大75 MBのPDFを扱えます。確定前にサーバーがサイズとSHA-256を再検証し、ダウンロード後も端末側でSHA-256を検証します。
+
+```dotenv
+BLOB_READ_WRITE_TOKEN=
+BLOB_STORE_ID=
+```
+
+Vercel Blob未設定時は、S3、Cloudflare R2、MinIOなどのS3互換ストレージまたはローカルファイル保存へフォールバックします。Vercel上で4.5 MBを超えるPDFを扱う場合はPrivate Vercel Blobを設定してください。
 
 ```dotenv
 S3_BUCKET=
@@ -124,7 +131,8 @@ app/                 画面、機能モジュール、App Router API
 app/api/             認証、同期、PDF、Campus、フィードバック
 db/schema.ts         SQLite / PostgreSQL共通スキーマ
 lib/server/          DB、ファイル保存、同一オリジン検証
-public/              PWA、Service Worker、PDF Worker、アイコン
+public/              PWA、Service Workerテンプレート、PDF Worker、アイコン
+scripts/             デプロイごとのService Worker生成
 tests/               バックアップ、同期、安全性、Campus、復習
 .github/workflows/   GitHub Actions
 AGENTS.md            Codex向け開発ルール
@@ -146,7 +154,9 @@ FEATURE_CHECKLIST.md 公開版との比較
 
 ## Vercelへデプロイ
 
-GitHubリポジトリをVercelへ接続し、Firebase、外部PostgreSQL、S3互換ストレージの環境変数を登録します。Vercelのローカルファイルは永続化されないため、本番でSQLiteや `.data/objects` を正規保存先にしないでください。ビルドコマンドは `npm run build` です。
+個人・非商用運営では、Vercel Hobby、Neon Free PostgreSQL、Private Vercel Blob、既存Firebase Authenticationを使います。詳しい作成・設定・確認順は [`DEPLOYMENT_VERCEL.md`](DEPLOYMENT_VERCEL.md) を参照してください。
+
+GitHubのprivate repositoryをVercelへ接続すると、`main`へのpushごとにビルド・公開されます。デプロイごとにService Workerのキャッシュ版が変わり、利用中の端末には「今すぐ更新」が表示されます。Vercelのローカルファイルは永続化されないため、本番でSQLiteや `.data/objects` を正規保存先にしないでください。
 
 ## GitHubへ登録
 
@@ -154,7 +164,7 @@ GitHubリポジトリをVercelへ接続し、Firebase、外部PostgreSQL、S3互
 
 ```bash
 git add .
-git commit -m "Initial local migration"
+git commit -m "Describe the change"
 git remote add origin https://github.com/USER/REPOSITORY.git
 git push -u origin main
 ```
@@ -168,4 +178,4 @@ git push -u origin main
 - 別アカウントの同期メタデータが残る場合は自動送信を停止します。
 - メールアドレスだけで異なる認証を統合しません。
 - PDFは状態リビジョン、ノート版、SHA-256が一致した場合だけ同期します。
-- デプロイ先では、実Firebase・PostgreSQL・S3の接続情報を設定してから、Google / EmailログインとPC・スマートフォン間の双方向同期を受入確認してください。
+- デプロイ先では、実Firebase・Neon PostgreSQL・Private Vercel Blobを接続してから、Google / Emailログイン、75 MB PDF、PC・スマートフォン間の双方向同期を受入確認してください。

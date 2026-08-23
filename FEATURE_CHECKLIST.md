@@ -17,15 +17,16 @@
 | PDF込みバックアップ・復元 | ✅ | ✅ | SHA-256往復・ID衝突再採番・参照追従テスト |
 | 旧localStorage / CMTR移行 | ✅ | ✅ | 学期変換・講義/授業回/Campus参照テスト |
 | Campus Muster任意表示 | ✅ | ✅ | 初期OFFテスト |
-| Firebase Google / Email認証 | ✅ | ✅ | 実プロジェクト応答・localhost承認・SDK初期化まで確認。本人ログインは受入確認 |
+| Firebase Google / Email認証 | ✅ | △ | 実プロジェクト応答・localhost承認・SDK初期化まで確認。本人ログインは公開後の受入確認 |
 | 初回同期の選択 | ✅ | ✅ | 同期判定・HTTPトランザクションテスト |
 | アカウント取り違え防止 | ✅ | ✅ | 同期判定テスト |
 | PDF同期競合防止 | ✅ | ✅ | prepare/upload/commit・部分失敗・再開・再試行テスト |
 | ローカル開発DB・PDF保存 | Sites固有 | ✅ | SQLite / local files |
-| Vercel向け永続保存 | ― | ✅ | PostgreSQL 18.4 / MinIO実接続で同期統合試験済み |
+| Vercel向け永続保存 | ― | △ | Neon向けPostgreSQLとPrivate Blob署名転送を実装。実Neon / Blob接続は公開後の受入確認 |
 | フィードバック送信 | ✅ | ✅ | SQLite疎通確認 |
 | フィードバック管理 | ChatGPT管理者 | ✅ | Firebase管理者へ変更 |
 | PWA・オフライン資産 | ✅ | ✅ | サーバー停止中の起動・編集・PDF再表示・復帰を確認 |
+| PWA更新通知 | ― | ✅ | Service Workerをデプロイごとに版管理し、「今すぐ更新」から再読込を実ブラウザ確認 |
 | レスポンシブCSS | ✅ | ✅ | 390 × 844 pxで横あふれなし・モバイルUI確認 |
 | ChatGPT旧アカウント連携 | ✅ | △ | 公開版でバックアップ推奨 |
 | Sites公開履歴・専用URL | ✅ | ― | GitHub / ホスティングへ置換 |
@@ -40,10 +41,13 @@
 - [x] オフライン起動・編集・再読込・PDF表示・オンライン復帰
 - [x] 文字PDF・画像PDF・220ページPDF・36 MB PDF
 - [x] 390 × 844 pxのレスポンシブ表示
+- [x] Private Vercel Blob向け署名URLの発行条件、所有者・revision・noteVersion・size・SHA-256検証
+- [x] Service Worker更新検知、利用者確認後の切替、再読込
 
 ## デプロイ先で行う受入確認
 
 - [ ] 実FirebaseアカウントでGoogle / Emailログイン
+- [ ] Neon Free / Private Vercel Blobを接続した公開URLで同期・75 MB PDFを確認
 - [ ] 物理スマートフォンを接続し、PCとの双方向同期・表示・オフライン復帰を確認
 
-上の2項目は本人の実アカウントと物理端末を必要とします。PostgreSQL / S3アダプターの実接続は完了しており、マネージドサービス固有のネットワーク・資格情報確認だけがデプロイ先に残ります。
+上の3項目は本人の外部サービス接続または物理端末を必要とします。PostgreSQL / S3アダプターの実接続とPrivate Blob転送のコード検証は完了しており、マネージドサービス固有のネットワーク・資格情報確認だけがデプロイ先に残ります。

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { rm } from "node:fs/promises";
+import { readdir, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,6 +53,19 @@ try {
   assert.equal(firstPrepare.response.status, 200, JSON.stringify(firstPrepare.body));
   assert.equal(firstPrepare.body.revision, 1);
   assert.equal(typeof firstPrepare.body.transactionId, "string");
+
+  const directCapability = await jsonRequest(`${origin}/api/sync/pdf/transfer`, {
+    method: "POST",
+    headers: owner,
+    body: JSON.stringify({
+      operation: "prepare-upload",
+      transactionId: firstPrepare.body.transactionId,
+      stateRevision: firstPrepare.body.revision,
+      ...firstManifest[0],
+    }),
+  });
+  assert.equal(directCapability.response.status, 200);
+  assert.equal(directCapability.body.direct, false);
 
   const beforeCommit = await jsonRequest(`${origin}/api/sync/state`, { headers: owner });
   assert.equal(beforeCommit.body.exists, false);
@@ -127,6 +140,47 @@ try {
   assert.equal(secondCloud.body.revision, 2);
   assert.equal(secondCloud.body.state.sessions[0].updatedAt, "v2");
 
+  const losingPdf = new TextEncoder().encode("%PDF-1.4\n% stale concurrent upload\n%%EOF\n");
+  const losingState = stateFor("v3-losing");
+  const losingManifest = manifestFor(losingState, losingPdf);
+  const losingPrepare = await jsonRequest(`${origin}/api/sync/state`, {
+    method: "POST",
+    headers: owner,
+    body: JSON.stringify(syncBody(2, losingState, losingManifest, "device-integration-losing")),
+  });
+  assert.equal(losingPrepare.response.status, 200, JSON.stringify(losingPrepare.body));
+  const losingUpload = await uploadPdf(origin, owner, losingPrepare.body.transactionId, losingPrepare.body.revision, losingManifest[0], losingPdf);
+  assert.equal(losingUpload.response.status, 200, JSON.stringify(losingUpload.body));
+
+  const winningPdf = new TextEncoder().encode("%PDF-1.4\n% winning concurrent upload\n%%EOF\n");
+  const winningState = stateFor("v3-winning");
+  const winningManifest = manifestFor(winningState, winningPdf);
+  const winningPrepare = await jsonRequest(`${origin}/api/sync/state`, {
+    method: "POST",
+    headers: owner,
+    body: JSON.stringify(syncBody(2, winningState, winningManifest, "device-integration-winning")),
+  });
+  assert.equal(winningPrepare.response.status, 200, JSON.stringify(winningPrepare.body));
+  const winningUpload = await uploadPdf(origin, owner, winningPrepare.body.transactionId, winningPrepare.body.revision, winningManifest[0], winningPdf);
+  assert.equal(winningUpload.response.status, 200, JSON.stringify(winningUpload.body));
+  const winningCommit = await jsonRequest(`${origin}/api/sync/state`, {
+    method: "POST",
+    headers: owner,
+    body: JSON.stringify({ transactionId: winningPrepare.body.transactionId }),
+  });
+  assert.equal(winningCommit.response.status, 200, JSON.stringify(winningCommit.body));
+  assert.equal(winningCommit.body.revision, 3);
+
+  const losingCommit = await jsonRequest(`${origin}/api/sync/state`, {
+    method: "POST",
+    headers: owner,
+    body: JSON.stringify({ transactionId: losingPrepare.body.transactionId }),
+  });
+  assert.equal(losingCommit.response.status, 409);
+  assert.equal(losingCommit.body.conflict, true);
+  const remainingObjects = await readdir(objectPath, { recursive: true });
+  assert.equal(remainingObjects.some((entry) => String(entry).includes(losingPrepare.body.transactionId) && String(entry).endsWith(".pdf")), false);
+
   const isolatedAccount = await jsonRequest(`${origin}/api/sync/state`, { headers: other });
   assert.equal(isolatedAccount.body.exists, false);
   const isolatedPdf = await fetch(`${origin}/api/sync/pdf?sessionId=session-1`, { headers: other });
@@ -146,7 +200,7 @@ try {
   const deletionMarker = await jsonRequest(`${origin}/api/sync/state`, { headers: owner });
   assert.equal(deletionMarker.body.deleted, true);
 
-  process.stdout.write("sync API integration: prepare/upload/commit, partial failure, conflict, owner isolation, missing PDF, deletion passed\n");
+  process.stdout.write("sync API integration: prepare/upload/commit, partial failure, conflict cleanup, owner isolation, missing PDF, deletion passed\n");
 } finally {
   server.kill();
   await Promise.race([

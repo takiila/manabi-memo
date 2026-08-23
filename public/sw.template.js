@@ -1,4 +1,4 @@
-const CACHE_NAME = "manabi-memo-shell-v4";
+const CACHE_NAME = "manabi-memo-shell-__CACHE_VERSION__";
 const APP_SHELL = ["/", "/offline.html", "/favicon.svg", "/manifest.webmanifest", "/pdf.worker.min.mjs"];
 
 self.addEventListener("install", (event) => {
@@ -6,7 +6,10 @@ self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => Promise.all(APP_SHELL.map(async (asset) => {
     try { await cache.add(asset); } catch { /* the runtime fetch can retry it later */ }
   }))));
-  self.skipWaiting();
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") void self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {

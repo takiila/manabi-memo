@@ -368,10 +368,21 @@ export function readLegacyCampusBundle(storage: Pick<Storage, "getItem">, fallba
     degreePlan: parse("cmtr:degreePlan"),
     betaAccess: { enabled: true, importedLegacyAt: new Date().toISOString() },
   });
+  const referencedTermNames = [
+    ...campus.assignments,
+    ...campus.assignmentTemplates,
+    ...campus.exams,
+    ...campus.studyTasks,
+  ].map((item) => item.termId);
   return {
     campus,
     courses,
-    termNames: Array.from(new Set([fallbackTerm, ...terms.map((term) => term.name), ...courses.map((course) => course.termName)])),
+    termNames: Array.from(new Set([
+      fallbackTerm,
+      ...terms.map((term) => term.name),
+      ...courses.map((course) => course.termName),
+      ...referencedTermNames,
+    ])),
     activeTermName,
     activeTermId,
     termViewMode: parse("cmtr:termViewMode") === "active" ? "active" : "all",

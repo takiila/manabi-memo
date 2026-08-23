@@ -26,6 +26,8 @@ test("ページメタデータとPWA manifestにまなびメモの名称が設�
   assert.match(layout, /width:\s*["']device-width["']/);
   assert.match(sw, /\/offline\.html/);
   assert.match(sw, /_next\/static/);
+  assert.doesNotMatch(sw, /__CACHE_VERSION__/);
+  assert.match(sw, /SKIP_WAITING/);
   assert.match(offline, /オフラインで利用中/);
 });
 

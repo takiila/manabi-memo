@@ -6,12 +6,24 @@ import {
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
+import {
+  BlobNotFoundError,
+  del as deleteBlob,
+  get as getBlob,
+  head as headBlob,
+  issueSignedToken,
+  list as listBlobs,
+  presignUrl,
+  put as putBlob,
+} from "@vercel/blob";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-type StoredObject = { body: ReadableStream<Uint8Array> };
+export type StoredObject = { body: ReadableStream<Uint8Array> };
 type ListedObject = { key: string };
 type ListResult = { objects: ListedObject[]; truncated: boolean; cursor?: string };
+export type DirectObjectTransfer = { url: string; expiresAt: number };
 
 export interface ObjectStore {
   get(key: string): Promise<StoredObject | null>;
@@ -20,16 +32,148 @@ export interface ObjectStore {
   list(options: { prefix: string; cursor?: string; limit?: number }): Promise<ListResult>;
   hasPrefix(prefix: string): Promise<boolean>;
   deletePrefix(prefix: string): Promise<void>;
+  stat?(key: string): Promise<{ size: number } | null>;
+  createDirectUpload?(key: string, options: { contentType: string; maximumSizeInBytes: number }): Promise<DirectObjectTransfer>;
+  createDirectDownload?(key: string): Promise<DirectObjectTransfer>;
 }
 
 let sharedStore: ObjectStore | null = null;
 
 export function getObjectStore() {
-  sharedStore ??= process.env.S3_BUCKET?.trim() ? new S3ObjectStore() : new LocalObjectStore();
+  sharedStore ??= hasVercelBlobConfiguration()
+    ? new VercelBlobObjectStore()
+    : process.env.S3_BUCKET?.trim()
+      ? new S3ObjectStore()
+      : new LocalObjectStore();
   return sharedStore;
 }
 
 export const objectStore = getObjectStore;
+
+export async function inspectStoredObject(key: string, maximumSize = Number.MAX_SAFE_INTEGER) {
+  const object = await objectStore().get(key);
+  if (!object) return null;
+  const reader = object.body.getReader();
+  const hash = createHash("sha256");
+  let size = 0;
+  while (true) {
+    const result = await reader.read();
+    if (result.done) break;
+    size += result.value.byteLength;
+    if (size > maximumSize) {
+      await reader.cancel();
+      return { size, sha256: "", tooLarge: true as const };
+    }
+    hash.update(result.value);
+  }
+  return { size, sha256: hash.digest("hex"), tooLarge: false as const };
+}
+
+export async function storedObjectSize(key: string) {
+  const store = objectStore();
+  if (store.stat) return (await store.stat(key))?.size ?? null;
+  const inspected = await inspectStoredObject(key);
+  return inspected?.size ?? null;
+}
+
+function hasVercelBlobConfiguration() {
+  return Boolean(
+    process.env.BLOB_READ_WRITE_TOKEN?.trim()
+    || (process.env.VERCEL_OIDC_TOKEN?.trim() && process.env.BLOB_STORE_ID?.trim()),
+  );
+}
+
+class VercelBlobObjectStore implements ObjectStore {
+  async stat(key: string) {
+    try {
+      const result = await headBlob(key);
+      return { size: result.size };
+    } catch (cause) {
+      if (cause instanceof BlobNotFoundError) return null;
+      throw cause;
+    }
+  }
+
+  async get(key: string) {
+    const result = await getBlob(key, { access: "private", useCache: false });
+    if (!result || result.statusCode !== 200) return null;
+    return { body: result.stream };
+  }
+
+  async put(key: string, value: ArrayBuffer, contentType = "application/octet-stream") {
+    await putBlob(key, Buffer.from(value), {
+      access: "private",
+      allowOverwrite: true,
+      cacheControlMaxAge: 60,
+      contentType,
+    });
+  }
+
+  async delete(keys: string | string[]) {
+    const values = Array.isArray(keys) ? keys : [keys];
+    if (values.length === 0) return;
+    await deleteBlob(values);
+  }
+
+  async list({ prefix, cursor, limit }: { prefix: string; cursor?: string; limit?: number }) {
+    const result = await listBlobs({ prefix, cursor, limit, mode: "expanded" });
+    return {
+      objects: result.blobs.map((item) => ({ key: item.pathname })),
+      truncated: result.hasMore,
+      cursor: result.cursor,
+    };
+  }
+
+  async hasPrefix(prefix: string) {
+    return (await this.list({ prefix, limit: 1 })).objects.length > 0;
+  }
+
+  async deletePrefix(prefix: string) {
+    let cursor: string | undefined;
+    do {
+      const page = await this.list({ prefix, cursor });
+      await this.delete(page.objects.map((item) => item.key));
+      cursor = page.truncated ? page.cursor : undefined;
+    } while (cursor);
+  }
+
+  async createDirectUpload(key: string, options: { contentType: string; maximumSizeInBytes: number }) {
+    const expiresAt = Date.now() + 5 * 60 * 1000;
+    const allowedContentTypes = [options.contentType];
+    const token = await issueSignedToken({
+      pathname: key,
+      operations: ["put"],
+      validUntil: expiresAt,
+      allowedContentTypes,
+      maximumSizeInBytes: options.maximumSizeInBytes,
+    });
+    const result = await presignUrl(token, {
+      access: "private",
+      operation: "put",
+      pathname: key,
+      validUntil: expiresAt,
+      allowedContentTypes,
+      maximumSizeInBytes: options.maximumSizeInBytes,
+      allowOverwrite: false,
+      addRandomSuffix: false,
+      cacheControlMaxAge: 60,
+    });
+    return { url: result.presignedUrl, expiresAt };
+  }
+
+  async createDirectDownload(key: string) {
+    const expiresAt = Date.now() + 5 * 60 * 1000;
+    const token = await issueSignedToken({ pathname: key, operations: ["get"], validUntil: expiresAt });
+    const result = await presignUrl(token, {
+      access: "private",
+      operation: "get",
+      pathname: key,
+      validUntil: expiresAt,
+      useCache: true,
+    });
+    return { url: result.presignedUrl, expiresAt };
+  }
+}
 
 class LocalObjectStore implements ObjectStore {
   private readonly root = path.resolve(
@@ -117,6 +261,7 @@ class S3ObjectStore implements ObjectStore {
 
   async delete(keys: string | string[]) {
     const values = Array.isArray(keys) ? keys : [keys];
+    if (values.length === 0) return;
     if (values.length === 1) {
       await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: values[0] }));
       return;
