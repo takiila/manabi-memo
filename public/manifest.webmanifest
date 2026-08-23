@@ -1,0 +1,18 @@
+{
+  "name": "まなびメモ",
+  "short_name": "まなびメモ",
+  "description": "授業中は普通に書き、必要なところだけ付箋にして後から考えを足せる講義ノート",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f4ee",
+  "theme_color": "#345f53",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

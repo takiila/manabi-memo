@@ -1,0 +1,41 @@
+{
+  "name": "manabi-memo",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0",
+    "build": "next build",
+    "start": "next start --hostname 0.0.0.0",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/backup.test.mjs tests/campus-model.test.mjs tests/data-safety-model.test.mjs tests/firebase-auth-model.test.mjs tests/memo-review-model.test.mjs tests/pdf-sync-model.test.mjs tests/sync-integrity-model.test.mjs tests/sync-model.test.mjs tests/sync-retry-model.test.mjs tests/rendered-html.test.mjs",
+    "test:sync-api": "node tests/sync-api.integration.mjs",
+    "test:sync-live": "node tests/live-provider.integration.mjs",
+    "test:all": "npm run typecheck && npm run lint && npm test && npm run build && npm run test:sync-api",
+    "lint": "eslint app lib tests --ignore-pattern .next"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1116.0",
+    "firebase": "^12.17.1",
+    "lucide-react": "^1.30.0",
+    "next": "16.2.6",
+    "pdfjs-dist": "^6.2.108",
+    "postgres": "^3.4.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.2.1",
+    "@types/node": "22.19.19",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.2.6",
+    "tailwindcss": "4.2.1",
+    "typescript": "5.9.3"
+  },
+  "type": "module",
+  "displayName": "まなびメモ"
+}
