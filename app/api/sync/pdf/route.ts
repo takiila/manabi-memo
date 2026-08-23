@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { execute, queryAll, queryOne } from "@/lib/server/database";
 import { objectStore } from "@/lib/server/object-store";
-import { MAX_PDF_BYTES } from "@/lib/server/pdf-transfer";
+import { MAX_PDF_BYTES, stagingPdfObjectKey } from "@/lib/server/pdf-transfer";
 import { isSameOriginRequest } from "@/lib/server/request-security";
 import { accountForRequest } from "../../../server-auth-response";
 import { matchesNotePdfVersion, pdfVersionsFromState } from "../../../pdf-sync-model";
@@ -85,7 +85,7 @@ async function stagePdf(accountId: string, transactionId: string, sessionId: str
   const expectedVersion = pdfVersionsFromState(state)[sessionId];
   const expected = manifest?.find((item) => item.sessionId === sessionId);
   if (!manifest || !expected || expectedVersion !== suppliedVersion || expected.size !== bytes.byteLength || expected.sha256 !== sha256 || suppliedRevision !== transaction.target_revision) return json({ error: "PDFが同期対象のノート更新版・サイズ・SHA-256と一致しません。", conflict: true }, 409);
-  const objectKey = `${accountId}/transactions/${encodeURIComponent(transactionId)}/${encodeURIComponent(sessionId)}.pdf`;
+  const objectKey = stagingPdfObjectKey(accountId, transactionId, sessionId);
   await objectStore().put(objectKey, bytes, "application/pdf", { sha256, stateRevision: String(transaction.target_revision), noteVersion: suppliedVersion });
   const now = Date.now();
   try {

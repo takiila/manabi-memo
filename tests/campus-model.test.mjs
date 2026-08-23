@@ -10,6 +10,24 @@ import {
   readLegacyCampusState,
   refreshGeneratedStudyTasks,
 } from "../app/campus-model.ts";
+import { parseCampusAccessMode } from "../lib/server/campus-access-policy.ts";
+import { parseAllowedAccountEmails } from "../lib/server/account-access-policy.ts";
+
+test("2〜3人運営のメール許可リストを正規化して重複排除する", () => {
+  assert.deepEqual(parseAllowedAccountEmails(" A@example.test, b@example.test;A@EXAMPLE.TEST\n c@example.test "), [
+    "a@example.test",
+    "b@example.test",
+    "c@example.test",
+  ]);
+  assert.deepEqual(parseAllowedAccountEmails(undefined), []);
+});
+
+test("少人数公開用Campusアクセスは明示設定時だけ全認証ユーザーへ開く", () => {
+  assert.equal(parseCampusAccessMode("authenticated"), "authenticated");
+  assert.equal(parseCampusAccessMode(" AUTHENTICATED "), "authenticated");
+  assert.equal(parseCampusAccessMode(undefined), "invite");
+  assert.equal(parseCampusAccessMode("invalid"), "invite");
+});
 
 test("欠損した旧Campusデータへ安全な既定値を補完する", () => {
   const normalized = normalizeCampusState({

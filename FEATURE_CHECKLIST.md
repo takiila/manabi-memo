@@ -22,7 +22,7 @@
 | アカウント取り違え防止 | ✅ | ✅ | 同期判定テスト |
 | PDF同期競合防止 | ✅ | ✅ | prepare/upload/commit・部分失敗・再開・再試行テスト |
 | ローカル開発DB・PDF保存 | Sites固有 | ✅ | SQLite / local files |
-| Vercel向け永続保存 | ― | △ | Neon向けPostgreSQLとPrivate Blob署名転送を実装。実Neon / Blob接続は公開後の受入確認 |
+| Vercel向け永続保存 | ― | △ | Neon向けPostgreSQLとR2 / Private Blob署名転送を実装。実Neon / R2接続は公開後の受入確認 |
 | フィードバック送信 | ✅ | ✅ | SQLite疎通確認 |
 | フィードバック管理 | ChatGPT管理者 | ✅ | Firebase管理者へ変更 |
 | PWA・オフライン資産 | ✅ | ✅ | サーバー停止中の起動・編集・PDF再表示・復帰を確認 |
@@ -35,6 +35,8 @@
 
 - [x] 旧CMTRと完全バックアップの追加読込、ID衝突、参照整合性
 - [x] 同一アカウント2端末相当の初回同期、更新、revision競合
+- [x] 3アカウント×PC・スマートフォン相当で、ノート・Campus/CMTR・GPA・卒業要件の双方向同期と相互分離
+- [x] 2〜3人のメール許可リストと、許可外アカウントの同期API拒否
 - [x] PostgreSQL 18.4 / MinIO上で同一アカウント2端末相当、PDFバイト一致、途中失敗・再開、削除
 - [x] 異なるアカウントのstate / PDF所有者分離
 - [x] PDF途中失敗時に旧stateを維持し、再開後だけ新stateを確定
@@ -42,12 +44,14 @@
 - [x] 文字PDF・画像PDF・220ページPDF・36 MB PDF
 - [x] 390 × 844 pxのレスポンシブ表示
 - [x] Private Vercel Blob向け署名URLの発行条件、所有者・revision・noteVersion・size・SHA-256検証
+- [x] Cloudflare R2 / S3向け署名URL直送と、保存後のsize・SHA-256再検証
+- [x] 直接転送を中断した一時PDFの24時間掃除・R2 lifecycle分離と、署名ダウンロード前のSHA-256検証
 - [x] Service Worker更新検知、利用者確認後の切替、再読込
 
 ## デプロイ先で行う受入確認
 
 - [ ] 実FirebaseアカウントでGoogle / Emailログイン
-- [ ] Neon Free / Private Vercel Blobを接続した公開URLで同期・75 MB PDFを確認
-- [ ] 物理スマートフォンを接続し、PCとの双方向同期・表示・オフライン復帰を確認
+- [ ] Neon Free / Cloudflare R2を接続した公開URLで同期・75 MB PDFを確認
+- [ ] 3人の実Firebaseアカウントと物理スマートフォンを接続し、各PCとの双方向同期・相互分離・オフライン復帰を確認
 
-上の3項目は本人の外部サービス接続または物理端末を必要とします。PostgreSQL / S3アダプターの実接続とPrivate Blob転送のコード検証は完了しており、マネージドサービス固有のネットワーク・資格情報確認だけがデプロイ先に残ります。
+上の3項目は本人の外部サービス接続または物理端末を必要とします。3人×2端末相当のHTTP統合試験、PostgreSQL / S3アダプターの実接続、R2向け署名転送のコード検証は完了しており、マネージドサービス固有のネットワーク・資格情報確認だけがデプロイ先に残ります。

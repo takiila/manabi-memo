@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { queryAll, queryOne, withTransaction } from "@/lib/server/database";
 import { inspectStoredObject, objectStore, storedObjectSize } from "@/lib/server/object-store";
+import { committedPdfObjectKey, stagingPdfPrefix } from "@/lib/server/pdf-transfer";
 import { isSameOriginRequest } from "@/lib/server/request-security";
 import { accountForRequest } from "../../../server-auth-response";
 import { pdfVersionsFromState } from "../../../pdf-sync-model";
@@ -181,7 +182,9 @@ export async function DELETE(request: Request) {
     );
     return { nextRevision };
   });
-  try { await objectStore().deletePrefix(`${accountId}/`); } catch { /* deletion marker is durable; orphan cleanup is safe to retry later */ }
+  try {
+    await deletePrefixesBestEffort([`${accountId}/`, `accounts/${encodeURIComponent(accountId)}/`, `staging/${encodeURIComponent(accountId)}/`]);
+  } catch { /* deletion marker is durable; orphan cleanup is safe to retry later */ }
   return json({ ok: true, revision: deleted.nextRevision });
 }
 
@@ -240,12 +243,29 @@ async function commitTransaction(accountId: string, transactionId: string) {
     return json({ error: "PDF本体を確認できませんでした。" }, 503);
   }
 
-  let committed: { oldObjects: string[] };
+  const promotionId = crypto.randomUUID();
+  const promotedRows = rows.map((row) => ({
+    ...row,
+    staged_object_key: row.object_key,
+    object_key: committedPdfObjectKey(accountId, transactionId, promotionId, row.session_id),
+  }));
+  try {
+    const store = objectStore();
+    for (const row of promotedRows) {
+      await store.copy(row.staged_object_key, row.object_key);
+      if (await storedObjectSize(row.object_key) !== row.size) throw new Error("PROMOTED_PDF_SIZE_MISMATCH");
+    }
+  } catch {
+    await deleteObjectsBestEffort(promotedRows.map((row) => row.object_key));
+    return json({ error: "PDFを確定保存先へ移動できませんでした。", incomplete: true }, 503);
+  }
+
+  let committed: { oldObjects: string[]; usedPromoted: boolean };
   try {
     committed = await withTransaction(async (transaction) => {
       const latestTransaction = firstOrNull(await transaction.queryAll<TransactionRow>("SELECT id, user_id, base_revision, target_revision, schema_version, payload, device_id, status, created_at, updated_at, committed_at FROM sync_transactions WHERE id = ? AND user_id = ?", [transactionId, accountId]));
       if (!latestTransaction) throw new MissingTransactionError();
-      if (latestTransaction.status === "committed") return { oldObjects: [] };
+      if (latestTransaction.status === "committed") return { oldObjects: [], usedPromoted: false };
       if (latestTransaction.status !== "pending") throw new SyncConflictError(latestTransaction.target_revision, latestTransaction.updated_at);
       const current = firstOrNull(await transaction.queryAll<StateRow>("SELECT revision, schema_version, payload, updated_at, updated_by, deleted_at, pdf_manifest, sync_complete FROM synced_app_state WHERE user_id = ?", [accountId]));
       const currentRevision = current?.revision ?? 0;
@@ -269,24 +289,39 @@ async function commitTransaction(accountId: string, transactionId: string) {
         );
       }
       await transaction.execute("DELETE FROM synced_pdf WHERE user_id = ?", [accountId]);
-      for (const row of rows) {
+      for (const row of promotedRows) {
         await transaction.execute(
           "INSERT INTO synced_pdf (user_id, session_id, object_key, size, sha256, state_revision, note_version, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
           [accountId, row.session_id, row.object_key, row.size, row.sha256, latestTransaction.target_revision, row.note_version, now],
         );
       }
       await transaction.execute("UPDATE sync_transactions SET status = 'committed', updated_at = ?, committed_at = ? WHERE id = ? AND status = 'pending'", [now, now, transactionId]);
-      return { oldObjects: oldRows.map((row) => row.object_key) };
+      return { oldObjects: oldRows.map((row) => row.object_key), usedPromoted: true };
     });
   } catch (cause) {
-    if (cause instanceof MissingTransactionError) return json({ error: "同期トランザクションが見つかりません。" }, 404);
+    if (cause instanceof MissingTransactionError) {
+      await deleteObjectsBestEffort(promotedRows.map((row) => row.object_key));
+      return json({ error: "同期トランザクションが見つかりません。" }, 404);
+    }
     if (cause instanceof SyncConflictError) {
+      await deleteObjectsBestEffort(promotedRows.map((row) => row.object_key));
       try { await abortPendingTransaction(accountId, transactionId); } catch { /* the transaction remains inaccessible and can be cleaned up later */ }
       return conflictResponse(cause.currentRevision, cause.updatedAt);
     }
+    const statusAfterError = await transactionStatusBestEffort(accountId, transactionId);
+    if (statusAfterError === "committed") {
+      await deleteObjectsBestEffort(promotedRows.map((row) => row.staged_object_key));
+      return json({ ok: true, transactionId, revision: transactionRow.target_revision, committed: true });
+    }
+    if (statusAfterError !== null) await deleteObjectsBestEffort(promotedRows.map((row) => row.object_key));
     return json({ error: "クラウド同期を確定できませんでした。" }, 503);
   }
-  const newObjects = new Set(rows.map((row) => row.object_key));
+  await deleteObjectsBestEffort(promotedRows.map((row) => row.staged_object_key));
+  if (!committed.usedPromoted) {
+    await deleteObjectsBestEffort(promotedRows.map((row) => row.object_key));
+    return json({ ok: true, transactionId, revision: transactionRow.target_revision, committed: true });
+  }
+  const newObjects = new Set(promotedRows.map((row) => row.object_key));
   for (const key of committed.oldObjects.filter((value) => !newObjects.has(value))) {
     try { await objectStore().delete(key); } catch { /* DB commit is already a consistent snapshot; clean-up can be retried later. */ }
   }
@@ -320,7 +355,30 @@ async function abortPendingTransaction(accountId: string, transactionId: string,
     return true;
   });
   if (!aborted) return;
-  await objectStore().deletePrefix(`${accountId}/transactions/${encodeURIComponent(transactionId)}/`);
+  await deletePrefixesBestEffort([
+    stagingPdfPrefix(accountId, transactionId),
+    `${accountId}/transactions/${encodeURIComponent(transactionId)}/`,
+  ]);
+}
+
+async function deleteObjectsBestEffort(keys: string[]) {
+  if (keys.length === 0) return;
+  try { await objectStore().delete(keys); } catch { /* lifecycle cleanup remains available for staging objects */ }
+}
+
+async function deletePrefixesBestEffort(prefixes: string[]) {
+  await Promise.allSettled(prefixes.map((prefix) => objectStore().deletePrefix(prefix)));
+}
+
+async function transactionStatusBestEffort(accountId: string, transactionId: string) {
+  try {
+    return (await queryOne<{ status: string }>(
+      "SELECT status FROM sync_transactions WHERE id = ? AND user_id = ?",
+      [transactionId, accountId],
+    ))?.status ?? "missing";
+  } catch {
+    return null;
+  }
 }
 
 function parseStateBody(body: PutBody) {

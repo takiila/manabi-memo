@@ -31,13 +31,14 @@ test("ページメタデータとPWA manifestにまなびメモの名称が設�
   assert.match(offline, /オフラインで利用中/);
 });
 
-test("Firebase未設定時のCampus利用範囲をREADMEと画面で明示する", async () => {
+test("Firebase未設定時と少人数公開時のCampus利用範囲をREADMEと画面で明示する", async () => {
   const [readme, page, campus] = await Promise.all([
     readFile(new URL("../README.md", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/campus-module.tsx", import.meta.url), "utf8"),
   ]);
-  assert.match(readme, /Firebase未設定時はCampus.*有効化できず/);
+  assert.match(readme, /CAMPUS_ACCESS_MODE=authenticated.*認証済み利用者全員/);
+  assert.match(readme, /Firebase未設定時も端末内の基本機能は利用可能/);
   assert.match(readme, /1ファイル75 MB・500ページ/);
   assert.match(page, /Firebase未設定のため、招待ベータは利用できません/);
   assert.match(page, /OCR機能はこの端末版に含まれていません/);

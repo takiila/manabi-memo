@@ -18,7 +18,7 @@
 - ローカルDBはNode.js SQLiteを自動作成
 - 本番DBは通常のPostgreSQL URLへ接続
 - ローカルPDFはプロジェクト内のGit対象外フォルダへ保存
-- 本番PDFはPrivate Vercel Blobへ署名URLで直接送受信し、S3互換APIも代替として維持
+- 本番PDFはCloudflare R2またはPrivate Vercel Blobへ署名URLで直接送受信
 - Firebase ID tokenは従来どおり公開鍵で検証
 - 同一オリジン検証はVercel等のforwarded hostにも対応
 - フィードバック管理はChatGPTヘッダーからFirebase管理者認証へ変更
@@ -43,7 +43,7 @@
 | 公開Site | ローカル版 |
 |---|---|
 | SitesのD1バインディング | SQLite / PostgreSQLアダプター |
-| SitesのR2バインディング | Private Vercel Blob / ローカルファイル / S3互換アダプター |
+| SitesのR2バインディング | Cloudflare R2 / Private Vercel Blob / ローカルファイルアダプター |
 | Vinext / Vite / Worker入口 | 標準Next.js Node.js runtime |
 | ChatGPT管理者ヘッダー | Firebase + `FEEDBACK_ADMIN_EMAIL` |
 | Sites環境変数 | `.env.local` / ホスティング環境変数 |
@@ -85,6 +85,9 @@
 - 5xx・通信障害時の同期再試行を独立した回帰テストで確認
 - 大容量・多ページ・画像のみ・文字検索可能PDF、モバイル幅、完全オフライン再読込と復帰を実ブラウザで確認
 - Private Vercel Blob向けに5分間だけ有効な直接転送URLを実装し、所有者・トランザクション・revision・noteVersion・size・SHA-256を確定前後で検証
+- S3互換の署名URL直送を追加し、Cloudflare R2でも75 MB PDFがVercel Functionを経由しない構成へ変更
+- 一時PDFを `staging/`、確定PDFを `accounts/` に分離し、API掃除とR2 lifecycleで中断オブジェクトを回収。ダウンロード署名前にもSHA-256を検証
+- 認証済み利用者全員へCampusを開く少人数運営モードと、3アカウント×PC・スマートフォン相当のCampus/CMTR・GPA・卒業要件同期テストを追加
 - デプロイ単位のService Worker生成と更新通知を実装し、「今すぐ更新」による新キャッシュへの切替を実ブラウザで確認
 - コードフォルダをGit管理し、秘密情報・生成物を除外した初期コミットを作成
 
@@ -92,6 +95,6 @@
 
 ## デプロイ先でのみ行える受入確認
 
-PostgreSQL / S3アダプター自体はPostgreSQL 18.4とMinIOで実接続確認済みです。Neon Free / Private Vercel Blob、本人のFirebaseアカウント、物理スマートフォンは、この作業環境に資格情報や接続端末がないため、引き続き公開URLでの受入確認です。環境変数を設定した環境では `npm run test:sync-live` で同じプロバイダー統合試験を再実行できます。公開手順と合格条件は `DEPLOYMENT_VERCEL.md` に固定しました。
+PostgreSQL / S3アダプター自体はPostgreSQL 18.4とMinIOで実接続確認済みです。Neon Free / Cloudflare R2、本人のFirebaseアカウント、物理スマートフォンは、この作業環境に資格情報や接続端末がないため、引き続き公開URLでの受入確認です。環境変数を設定した環境では `npm run test:sync-live` で同じプロバイダー統合試験を再実行できます。公開手順と3人×2端末の合格条件は `DEPLOYMENT_VERCEL.md` に固定しました。
 
 `app/page.tsx` は公開版の細かな挙動を保つため、移行時点では大きなオーケストレーターを維持しています。新規機能はここへ積み増さず、既存画面の分割はE2E回帰テストを加えながら段階的に進めます。

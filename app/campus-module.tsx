@@ -153,7 +153,7 @@ export default function CampusModule({
       <header className="campus-header">
         <div>
           <button className="campus-back" type="button" onClick={onLeave}><ArrowLeft size={17} /> まなびメモへ</button>
-          <p className="campus-kicker">CAMPUS MUSTER · INVITE BETA</p>
+          <p className="campus-kicker">CAMPUS MUSTER · ACADEMIC PLANNER</p>
           <h1>今日やることが、すぐ分かる。</h1>
           <p>授業・提出物・試験を、まなびメモの講義と一緒に管理します。</p>
         </div>
@@ -303,7 +303,7 @@ function CampusAccessGate({ onLeave, onActivate, hasLegacyData, onImportLegacy, 
       <button className="campus-back" type="button" onClick={onLeave}><ArrowLeft size={17} /> まなびメモへ</button>
       <div className="campus-gate-card">
         <span className="campus-gate-icon"><LockKeyhole size={28} /></span>
-        <p className="campus-kicker">CAMPUS MUSTER · INVITE BETA</p>
+        <p className="campus-kicker">CAMPUS MUSTER · ACADEMIC PLANNER</p>
         <h1>{firebaseEnabled === false ? "Campus Musterは準備中です。" : "大学生活の管理を、ひとつの場所へ。"}</h1>
         <p>{firebaseEnabled === false
           ? "Firebaseが設定されていないため、招待ベータの有効化はできません。時間割・ノート・PDFなど、まなびメモの端末内機能はそのまま利用できます。"

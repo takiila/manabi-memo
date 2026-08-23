@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { accountForRequest } from "../../server-auth-response";
 import { execute, queryOne } from "@/lib/server/database";
 import { isSameOriginRequest } from "@/lib/server/request-security";
+import { campusAccessForAuthenticatedUsers } from "@/lib/server/campus-access-policy";
 
 type AccessBody = { code?: unknown };
 
@@ -12,6 +13,7 @@ export async function POST(request: Request) {
   const auth = await accountForRequest(request);
   if ("response" in auth) return auth.response;
   const account = auth.account;
+  if (campusAccessForAuthenticatedUsers()) return NextResponse.json({ ok: true, access: "authenticated" });
 
   let body: AccessBody;
   try {

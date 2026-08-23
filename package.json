@@ -14,7 +14,7 @@
     "start": "next start --hostname 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "pretest": "npm run prepare:service-worker",
-    "test": "node --experimental-strip-types --test tests/backup.test.mjs tests/campus-model.test.mjs tests/data-safety-model.test.mjs tests/firebase-auth-model.test.mjs tests/memo-review-model.test.mjs tests/pdf-sync-model.test.mjs tests/sync-integrity-model.test.mjs tests/sync-model.test.mjs tests/sync-retry-model.test.mjs tests/rendered-html.test.mjs",
+    "test": "node --experimental-strip-types --test tests/backup.test.mjs tests/campus-model.test.mjs tests/data-safety-model.test.mjs tests/firebase-auth-model.test.mjs tests/memo-review-model.test.mjs tests/object-store.test.mjs tests/pdf-sync-model.test.mjs tests/sync-integrity-model.test.mjs tests/sync-model.test.mjs tests/sync-retry-model.test.mjs tests/rendered-html.test.mjs",
     "test:sync-api": "node tests/sync-api.integration.mjs",
     "test:sync-live": "node tests/live-provider.integration.mjs",
     "test:all": "npm run typecheck && npm run lint && npm test && npm run build && npm run test:sync-api",
@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1116.0",
+    "@aws-sdk/s3-request-presigner": "^3.1116.0",
     "@vercel/blob": "^2.8.0",
     "firebase": "^12.17.1",
     "lucide-react": "^1.30.0",

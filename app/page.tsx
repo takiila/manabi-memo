@@ -1443,7 +1443,7 @@ export default function HomePage() {
           </button>
           {campusVisible && <button className={view === "campus" ? "active campus-nav-button" : "campus-nav-button"} onClick={() => setView("campus")}>
             <GraduationCap size={19} />
-            <span>Campus Muster<small>招待ベータ</small></span>
+            <span>Campus Muster<small>大学生活管理</small></span>
           </button>}
           <button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}>
             <Settings2 size={19} />

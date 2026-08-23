@@ -1,7 +1,7 @@
 import "server-only";
 
 import { execute, queryAll, queryOne } from "@/lib/server/database";
-import { inspectStoredObject, objectStore, storedObjectSize } from "@/lib/server/object-store";
+import { inspectStoredObject, objectStore } from "@/lib/server/object-store";
 import { matchesNotePdfVersion, pdfVersionsFromState } from "@/app/pdf-sync-model";
 import { isCommittedPdfMetadata, normalizePdfManifest } from "@/app/sync-integrity-model";
 
@@ -65,7 +65,19 @@ export function parsePendingPdfTransfer(value: unknown): PendingPdfTransfer | nu
 }
 
 export function directPdfObjectKey(accountId: string, input: PendingPdfTransfer) {
-  return `${accountId}/transactions/${encodeURIComponent(input.transactionId)}/${encodeURIComponent(input.sessionId)}.pdf`;
+  return stagingPdfObjectKey(accountId, input.transactionId, input.sessionId);
+}
+
+export function stagingPdfObjectKey(accountId: string, transactionId: string, sessionId: string) {
+  return `${stagingPdfPrefix(accountId, transactionId)}${encodeURIComponent(sessionId)}.pdf`;
+}
+
+export function stagingPdfPrefix(accountId: string, transactionId: string) {
+  return `staging/${encodeURIComponent(accountId)}/${encodeURIComponent(transactionId)}/`;
+}
+
+export function committedPdfObjectKey(accountId: string, transactionId: string, promotionId: string, sessionId: string) {
+  return `accounts/${encodeURIComponent(accountId)}/pdfs/${encodeURIComponent(transactionId)}/${encodeURIComponent(promotionId)}/${encodeURIComponent(sessionId)}.pdf`;
 }
 
 export async function validatePendingPdfTransfer(accountId: string, input: PendingPdfTransfer): Promise<TransferResult<TransactionRow>> {
@@ -177,7 +189,10 @@ export async function resolveCommittedPdf(accountId: string, sessionId: string):
     return failure("PDF一覧がクラウド状態と一致しません。", 409, true);
   }
   try {
-    if (await storedObjectSize(row.object_key) !== row.size) return failure("PDF本体のサイズを確認できません。", 409, true);
+    const inspected = await inspectStoredObject(row.object_key, row.size);
+    if (!inspected || inspected.tooLarge || inspected.size !== row.size || inspected.sha256 !== row.sha256) {
+      return failure("PDF本体のサイズまたはSHA-256を確認できません。", 409, true);
+    }
   } catch {
     return failure("PDF本体を確認できません。", 503);
   }

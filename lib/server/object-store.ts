@@ -1,13 +1,17 @@
 import {
+  CopyObjectCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import {
   BlobNotFoundError,
+  copy as copyBlob,
   del as deleteBlob,
   get as getBlob,
   head as headBlob,
@@ -24,10 +28,13 @@ export type StoredObject = { body: ReadableStream<Uint8Array> };
 type ListedObject = { key: string };
 type ListResult = { objects: ListedObject[]; truncated: boolean; cursor?: string };
 export type DirectObjectTransfer = { url: string; expiresAt: number };
+export type ObjectStoreKind = "vercel-blob-private" | "cloudflare-r2-private" | "s3-compatible" | "local-files";
 
 export interface ObjectStore {
+  readonly kind: ObjectStoreKind;
   get(key: string): Promise<StoredObject | null>;
   put(key: string, value: ArrayBuffer, contentType?: string, metadata?: Record<string, string>): Promise<void>;
+  copy(sourceKey: string, destinationKey: string): Promise<void>;
   delete(key: string | string[]): Promise<void>;
   list(options: { prefix: string; cursor?: string; limit?: number }): Promise<ListResult>;
   hasPrefix(prefix: string): Promise<boolean>;
@@ -84,6 +91,8 @@ function hasVercelBlobConfiguration() {
 }
 
 class VercelBlobObjectStore implements ObjectStore {
+  readonly kind = "vercel-blob-private" as const;
+
   async stat(key: string) {
     try {
       const result = await headBlob(key);
@@ -106,6 +115,15 @@ class VercelBlobObjectStore implements ObjectStore {
       allowOverwrite: true,
       cacheControlMaxAge: 60,
       contentType,
+    });
+  }
+
+  async copy(sourceKey: string, destinationKey: string) {
+    await copyBlob(sourceKey, destinationKey, {
+      access: "private",
+      allowOverwrite: true,
+      cacheControlMaxAge: 60,
+      contentType: "application/pdf",
     });
   }
 
@@ -176,6 +194,8 @@ class VercelBlobObjectStore implements ObjectStore {
 }
 
 class LocalObjectStore implements ObjectStore {
+  readonly kind = "local-files" as const;
+
   private readonly root = path.resolve(
     /* turbopackIgnore: true */ process.cwd(),
     process.env.LOCAL_FILE_STORE ?? ".data/objects",
@@ -195,6 +215,12 @@ class LocalObjectStore implements ObjectStore {
     const target = this.safePath(key);
     await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, new Uint8Array(value));
+  }
+
+  async copy(sourceKey: string, destinationKey: string) {
+    const target = this.safePath(destinationKey);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, await readFile(this.safePath(sourceKey)));
   }
 
   async delete(keys: string | string[]) {
@@ -231,6 +257,7 @@ class LocalObjectStore implements ObjectStore {
 }
 
 class S3ObjectStore implements ObjectStore {
+  readonly kind = isCloudflareR2Endpoint() ? "cloudflare-r2-private" as const : "s3-compatible" as const;
   private readonly bucket = process.env.S3_BUCKET!.trim();
   private readonly client = new S3Client({
     region: process.env.S3_REGION?.trim() || "auto",
@@ -255,8 +282,30 @@ class S3ObjectStore implements ObjectStore {
     return { body: result.Body.transformToWebStream() };
   }
 
+  async stat(key: string) {
+    try {
+      const result = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
+      return typeof result.ContentLength === "number" ? { size: result.ContentLength } : null;
+    } catch (cause) {
+      const error = cause as { name?: string; $metadata?: { httpStatusCode?: number } };
+      if (error.name === "NotFound" || error.name === "NoSuchKey" || error.$metadata?.httpStatusCode === 404) return null;
+      throw cause;
+    }
+  }
+
   async put(key: string, value: ArrayBuffer, contentType = "application/octet-stream", metadata?: Record<string, string>) {
     await this.client.send(new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: new Uint8Array(value), ContentType: contentType, Metadata: metadata }));
+  }
+
+  async copy(sourceKey: string, destinationKey: string) {
+    const copySource = `${this.bucket}/${sourceKey.split("/").map(encodeURIComponent).join("/")}`;
+    await this.client.send(new CopyObjectCommand({
+      Bucket: this.bucket,
+      CopySource: copySource,
+      Key: destinationKey,
+      ContentType: "application/pdf",
+      MetadataDirective: "REPLACE",
+    }));
   }
 
   async delete(keys: string | string[]) {
@@ -295,6 +344,29 @@ class S3ObjectStore implements ObjectStore {
       cursor = page.truncated ? page.cursor : undefined;
     } while (cursor);
   }
+
+  async createDirectUpload(key: string, options: { contentType: string; maximumSizeInBytes: number }) {
+    const expiresIn = 5 * 60;
+    const url = await getSignedUrl(this.client, new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      ContentType: options.contentType,
+    }), { expiresIn });
+    return { url, expiresAt: Date.now() + expiresIn * 1000 };
+  }
+
+  async createDirectDownload(key: string) {
+    const expiresIn = 5 * 60;
+    const url = await getSignedUrl(this.client, new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+    }), { expiresIn });
+    return { url, expiresAt: Date.now() + expiresIn * 1000 };
+  }
+}
+
+function isCloudflareR2Endpoint() {
+  return /\.r2\.cloudflarestorage\.com\/?$/i.test(process.env.S3_ENDPOINT?.trim() ?? "");
 }
 
 async function walk(directory: string, prefix: string, output: ListedObject[], limit: number) {

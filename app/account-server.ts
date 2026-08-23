@@ -3,7 +3,8 @@ import "server-only";
 import { execute, queryOne } from "@/lib/server/database";
 import { objectStore } from "@/lib/server/object-store";
 import { getChatGPTUser } from "./chatgpt-auth";
-import { verifyFirebaseRequest, type VerifiedFirebaseIdentity } from "./firebase-auth-server";
+import { FirebaseAuthError, verifyFirebaseRequest, type VerifiedFirebaseIdentity } from "./firebase-auth-server";
+import { accountEmailAllowed } from "@/lib/server/account-access-policy";
 
 export type AccountIdentity = {
   id: string;
@@ -27,6 +28,7 @@ const CHATGPT_ISSUER = "https://chatgpt.com/sites";
 export async function getAccountIdentity(request?: Request): Promise<AccountIdentity | null> {
   if (request?.headers.get("authorization")) {
     const firebase = await verifyFirebaseRequest(request);
+    if (firebase && !accountEmailAllowed(firebase.email)) throw new FirebaseAuthError("このアカウントは利用者として登録されていません。", 403);
     return firebase ? resolveAccount(firebase) : null;
   }
   return getLegacyChatGPTAccountIdentity();
@@ -34,6 +36,7 @@ export async function getAccountIdentity(request?: Request): Promise<AccountIden
 
 export async function getFirebaseAccountIdentity(request: Request): Promise<AccountIdentity | null> {
   const firebase = await verifyFirebaseRequest(request);
+  if (firebase && !accountEmailAllowed(firebase.email)) throw new FirebaseAuthError("このアカウントは利用者として登録されていません。", 403);
   return firebase ? resolveAccount(firebase) : null;
 }
 

@@ -11,7 +11,7 @@
 - ノート・PDF・付箋の横断検索と、一覧・時間割表示
 - 共通ごみ箱と30日間の復元
 - PDFを含むバックアップ、復元、旧保存形式の移行
-- 任意表示のCampus Muster（Firebase設定・ログイン・招待コードで有効化する限定ベータ）
+- 任意表示のCampus Muster（提出物、試験、出席、学習タスク、GPA、卒業要件）
 - Firebase Authenticationと、利用者が明示的に有効化する端末間同期
 - PWA用Manifest、Service Worker、レスポンシブUI
 
@@ -42,7 +42,7 @@ npm install
 npm run dev
 ```
 
-ブラウザで `http://localhost:3000` を開きます。環境変数がなくても、時間割、ノート、PDF、付箋、検索、バックアップは端末内で利用できます。Campus Musterは招待ベータのため、Firebase設定・ログイン・招待コードによる有効化が必要です。Firebase未設定時はCampusのメニューを表示しても有効化できず、端末内の基本機能だけが利用可能です。フィードバックなどのサーバーデータは `.data/manabi-memo.sqlite`、同期PDFは `.data/objects` に保存されます。どちらもGit対象外です。
+ブラウザで `http://localhost:3000` を開きます。環境変数がなくても、時間割、ノート、PDF、付箋、検索、バックアップは端末内で利用できます。Campus Musterのアカウント利用は既定では招待コード制で、2〜3人運営では `CAMPUS_ACCESS_MODE=authenticated` により認証済み利用者全員へ開放できます。Firebase未設定時も端末内の基本機能は利用可能です。フィードバックなどのサーバーデータは `.data/manabi-memo.sqlite`、同期PDFは `.data/objects` に保存されます。どちらもGit対象外です。
 
 ## 環境変数
 
@@ -55,11 +55,12 @@ FIREBASE_API_KEY=
 FIREBASE_AUTH_DOMAIN=
 FIREBASE_PROJECT_ID=
 FIREBASE_APP_ID=
+ALLOWED_ACCOUNT_EMAILS=user1@example.com,user2@example.com,user3@example.com
 ```
 
-Googleログインまたはメール認証を利用するときに必要です。Firebase Authenticationの承認済みドメインへ `localhost` と本番ドメインを追加してください。これら4項目はFirebase Web Appの公開設定値です。サービスアカウント秘密鍵は保存しません。
+Googleログインまたはメール認証を利用するときに必要です。Firebase Authenticationの承認済みドメインへ `localhost` と本番ドメインを追加してください。Firebaseの4項目はWeb Appの公開設定値です。サービスアカウント秘密鍵は保存しません。本番の `ALLOWED_ACCOUNT_EMAILS` には利用する2〜3人だけを指定し、第三者のログインと同期を拒否します。空欄は全認証ユーザーを許可するため、公開運営では使いません。
 
-未設定のままでも端末内の基本機能は使えますが、Campus Musterの招待ベータ有効化とアカウント同期は利用できません。Firebaseを設定した後、ログインしてからCampus画面で招待コードを入力してください。Campusのデータは有効化後もまず端末内へ保存され、同期を明示的に有効化した場合だけ同じアカウントの端末間で共有されます。
+未設定のままでも端末内の基本機能は使えますが、アカウント同期は利用できません。Campusのデータもまず端末内へ保存され、同期を明示的に有効化した場合だけ同じアカウントのPC・スマートフォン間で共有されます。別アカウントのデータはサーバーDBとPDF保存先の両方で分離されます。
 
 ### データベース
 
@@ -81,34 +82,30 @@ VercelではNeonのpooled connection stringを使い、アプリ側プールは 
 
 ### 同期PDF
 
-Vercel本番ではPrivate Vercel Blob Storeをプロジェクトへ接続します。ブラウザは5分だけ有効な署名URLを受け取り、PDFをBlobへ直接送受信します。これによりVercel Functionの4.5 MB上限を通さず、最大75 MBのPDFを扱えます。確定前にサーバーがサイズとSHA-256を再検証し、ダウンロード後も端末側でSHA-256を検証します。
-
-```dotenv
-BLOB_READ_WRITE_TOKEN=
-BLOB_STORE_ID=
-```
-
-Vercel Blob未設定時は、S3、Cloudflare R2、MinIOなどのS3互換ストレージまたはローカルファイル保存へフォールバックします。Vercel上で4.5 MBを超えるPDFを扱う場合はPrivate Vercel Blobを設定してください。
+2〜3人のVercel本番では、無料枠10 GBのCloudflare R2 private bucketを推奨します。ブラウザは5分だけ有効なS3署名URLを受け取り、PDFをR2へ直接送受信します。これによりVercel Functionの4.5 MB上限を通さず、最大75 MBのPDFを扱えます。確定前、ダウンロード署名発行前、端末保存前にSHA-256を検証します。一時PDFは `staging/`、確定PDFは `accounts/` へ分け、24時間のAPI掃除とR2 lifecycleで中断時の一時ファイルも回収します。
 
 ```dotenv
 S3_BUCKET=
 S3_REGION=auto
-S3_ENDPOINT=
+S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
 S3_ACCESS_KEY_ID=
 S3_SECRET_ACCESS_KEY=
 S3_FORCE_PATH_STYLE=false
 LOCAL_FILE_STORE=.data/objects
 ```
 
+Private Vercel Blobも同じ直接転送方式で利用できますが、Hobbyの保存枠は1 GBです。R2とVercel Blobを同時設定するとVercel Blobが優先されます。設定なしのローカル開発では `LOCAL_FILE_STORE` を使います。詳しい公開手順とR2 CORSは [DEPLOYMENT_VERCEL.md](DEPLOYMENT_VERCEL.md) を参照してください。
+
 ### 任意機能
 
 ```dotenv
+CAMPUS_ACCESS_MODE=authenticated
 CAMPUS_BETA_CODE=
 FEEDBACK_ADMIN_EMAIL=
 TRUST_CHATGPT_AUTH_HEADERS=false
 ```
 
-`TRUST_CHATGPT_AUTH_HEADERS` は、認証ヘッダーを外部から偽装できない信頼済みプロキシ配下で旧ChatGPTアカウント移行を行う場合だけ有効にします。通常のVercel公開では `false` のままにしてください。
+`CAMPUS_ACCESS_MODE=authenticated` は認証済み利用者全員へCampusを開きます。既定の `invite` では `CAMPUS_BETA_CODE` が必要です。`TRUST_CHATGPT_AUTH_HEADERS` は、認証ヘッダーを外部から偽装できない信頼済みプロキシ配下で旧ChatGPTアカウント移行を行う場合だけ有効にします。通常のVercel公開では `false` のままにしてください。
 
 ## コマンド
 
@@ -154,7 +151,7 @@ FEATURE_CHECKLIST.md 公開版との比較
 
 ## Vercelへデプロイ
 
-個人・非商用運営では、Vercel Hobby、Neon Free PostgreSQL、Private Vercel Blob、既存Firebase Authenticationを使います。詳しい作成・設定・確認順は [`DEPLOYMENT_VERCEL.md`](DEPLOYMENT_VERCEL.md) を参照してください。
+2〜3人の個人・非商用運営では、Vercel Hobby、Neon Free PostgreSQL、Cloudflare R2、既存Firebase Authenticationを使います。詳しい作成・設定・確認順は [`DEPLOYMENT_VERCEL.md`](DEPLOYMENT_VERCEL.md) を参照してください。
 
 GitHubのprivate repositoryをVercelへ接続すると、`main`へのpushごとにビルド・公開されます。デプロイごとにService Workerのキャッシュ版が変わり、利用中の端末には「今すぐ更新」が表示されます。Vercelのローカルファイルは永続化されないため、本番でSQLiteや `.data/objects` を正規保存先にしないでください。
 
@@ -178,4 +175,4 @@ git push -u origin main
 - 別アカウントの同期メタデータが残る場合は自動送信を停止します。
 - メールアドレスだけで異なる認証を統合しません。
 - PDFは状態リビジョン、ノート版、SHA-256が一致した場合だけ同期します。
-- デプロイ先では、実Firebase・Neon PostgreSQL・Private Vercel Blobを接続してから、Google / Emailログイン、75 MB PDF、PC・スマートフォン間の双方向同期を受入確認してください。
+- デプロイ先では、実Firebase・Neon PostgreSQL・Cloudflare R2を接続してから、3人のGoogle / Emailログイン、75 MB PDF、PC・スマートフォン間の双方向同期と相互分離を受入確認してください。

@@ -27,6 +27,8 @@ const server = spawn(process.execPath, [nextBin, "start", "--hostname", "127.0.0
     FIREBASE_AUTH_DOMAIN: "",
     FIREBASE_PROJECT_ID: "",
     FIREBASE_APP_ID: "",
+    CAMPUS_ACCESS_MODE: "authenticated",
+    ALLOWED_ACCOUNT_EMAILS: "owner@example.test,other@example.test,third@example.test",
   },
   stdio: ["ignore", "pipe", "pipe"],
 });
@@ -38,9 +40,26 @@ try {
 
   const owner = requestHeaders("owner@example.test");
   const other = requestHeaders("other@example.test");
+  const third = requestHeaders("third@example.test");
+  const outsider = requestHeaders("outsider@example.test");
   const account = await jsonRequest(`${origin}/api/account`, { headers: owner });
   assert.equal(account.response.status, 200);
   assert.equal(account.body.authenticated, true);
+  assert.equal(account.body.campusBeta, true);
+  assert.equal(account.body.campusAccess, "authenticated");
+  for (const headers of [other, third]) {
+    const result = await jsonRequest(`${origin}/api/account`, { headers });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.campusBeta, true);
+  }
+  const blockedAccount = await jsonRequest(`${origin}/api/account`, { headers: outsider });
+  assert.equal(blockedAccount.response.status, 403);
+  const blockedSync = await jsonRequest(`${origin}/api/sync/state`, { headers: outsider });
+  assert.equal(blockedSync.response.status, 403);
+  const health = await jsonRequest(`${origin}/api/health`);
+  assert.equal(health.body.pdfStorage, "local-files");
+  assert.equal(health.body.directPdfTransfer, false);
+  assert.equal(health.body.campusAccess, "authenticated");
 
   const firstPdf = new TextEncoder().encode("%PDF-1.4\n% manabi sync integration v1\n%%EOF\n");
   const firstState = stateFor("v1");
@@ -76,19 +95,26 @@ try {
 
   const firstUpload = await uploadPdf(origin, owner, firstPrepare.body.transactionId, firstPrepare.body.revision, firstManifest[0], firstPdf);
   assert.equal(firstUpload.response.status, 200, JSON.stringify(firstUpload.body));
-  const firstCommit = await jsonRequest(`${origin}/api/sync/state`, {
+  const commitFirstTransaction = () => jsonRequest(`${origin}/api/sync/state`, {
     method: "POST",
     headers: owner,
     body: JSON.stringify({ transactionId: firstPrepare.body.transactionId }),
   });
+  const [firstCommit, duplicateFirstCommit] = await Promise.all([commitFirstTransaction(), commitFirstTransaction()]);
   assert.equal(firstCommit.response.status, 200, JSON.stringify(firstCommit.body));
+  assert.equal(duplicateFirstCommit.response.status, 200, JSON.stringify(duplicateFirstCommit.body));
   assert.equal(firstCommit.body.revision, 1);
+  const objectsAfterPromotion = await readdir(objectPath, { recursive: true });
+  assert.equal(objectsAfterPromotion.some((entry) => String(entry).includes("staging") && String(entry).endsWith(".pdf")), false);
+  assert.equal(objectsAfterPromotion.filter((entry) => String(entry).includes("accounts") && String(entry).endsWith("session-1.pdf")).length, 1);
 
   const firstCloud = await jsonRequest(`${origin}/api/sync/state`, { headers: owner });
   assert.equal(firstCloud.response.status, 200);
   assert.equal(firstCloud.body.exists, true);
   assert.equal(firstCloud.body.revision, 1);
   assert.equal(firstCloud.body.state.sessions[0].updatedAt, "v1");
+  assert.equal(firstCloud.body.state.campus.degreePlan.categories[0].name, "owner卒業要件");
+  assert.equal(firstCloud.body.state.campus.gpaProfile.earnedCredits, 40);
   assert.equal(firstCloud.body.pdfs.length, 1);
 
   const downloaded = await fetch(`${origin}/api/sync/pdf?sessionId=session-1`, { headers: owner });
@@ -139,6 +165,7 @@ try {
   const secondCloud = await jsonRequest(`${origin}/api/sync/state`, { headers: owner });
   assert.equal(secondCloud.body.revision, 2);
   assert.equal(secondCloud.body.state.sessions[0].updatedAt, "v2");
+  assert.equal(secondCloud.body.state.campus.assignments[0].title, "owner-v2提出物");
 
   const losingPdf = new TextEncoder().encode("%PDF-1.4\n% stale concurrent upload\n%%EOF\n");
   const losingState = stateFor("v3-losing");
@@ -186,6 +213,31 @@ try {
   const isolatedPdf = await fetch(`${origin}/api/sync/pdf?sessionId=session-1`, { headers: other });
   assert.equal(isolatedPdf.status, 404);
 
+  const otherPcState = stateWithoutPdfFor("other", "pc-v1", 52);
+  await commitState(origin, other, 0, otherPcState, "device-other-pc");
+  const otherPhoneCloud = await jsonRequest(`${origin}/api/sync/state`, { headers: other });
+  assertAccountState(otherPhoneCloud.body, "other", "pc-v1", 52, 1);
+
+  const otherPhoneState = stateWithoutPdfFor("other", "phone-v2", 56);
+  await commitState(origin, other, 1, otherPhoneState, "device-other-phone");
+  const otherPcCloud = await jsonRequest(`${origin}/api/sync/state`, { headers: other });
+  assertAccountState(otherPcCloud.body, "other", "phone-v2", 56, 2);
+
+  const thirdPcState = stateWithoutPdfFor("third", "pc-v1", 68);
+  await commitState(origin, third, 0, thirdPcState, "device-third-pc");
+  const thirdPhoneCloud = await jsonRequest(`${origin}/api/sync/state`, { headers: third });
+  assertAccountState(thirdPhoneCloud.body, "third", "pc-v1", 68, 1);
+
+  const thirdPhoneState = stateWithoutPdfFor("third", "phone-v2", 72);
+  await commitState(origin, third, 1, thirdPhoneState, "device-third-phone");
+  const thirdPcCloud = await jsonRequest(`${origin}/api/sync/state`, { headers: third });
+  assertAccountState(thirdPcCloud.body, "third", "phone-v2", 72, 2);
+
+  const ownerAfterThreeAccounts = await jsonRequest(`${origin}/api/sync/state`, { headers: owner });
+  assert.equal(ownerAfterThreeAccounts.body.state.campus.degreePlan.categories[0].name, "owner卒業要件");
+  assert.equal(ownerAfterThreeAccounts.body.state.memos[0].text, "owner-v3-winningメモ");
+  assert.notEqual(otherPcCloud.body.state.memos[0].text, thirdPcCloud.body.state.memos[0].text);
+
   const removedPdf = await jsonRequest(`${origin}/api/sync/pdf?sessionId=session-1`, {
     method: "DELETE",
     headers: owner,
@@ -200,7 +252,7 @@ try {
   const deletionMarker = await jsonRequest(`${origin}/api/sync/state`, { headers: owner });
   assert.equal(deletionMarker.body.deleted, true);
 
-  process.stdout.write("sync API integration: prepare/upload/commit, partial failure, conflict cleanup, owner isolation, missing PDF, deletion passed\n");
+  process.stdout.write("sync API integration: 3 users x PC/phone, Campus/CMTR graduation data, PDF integrity, conflict cleanup, account isolation, deletion passed\n");
 } finally {
   server.kill();
   await Promise.race([
@@ -210,11 +262,34 @@ try {
   await rm(dataRoot, { recursive: true, force: true });
 }
 
-function stateFor(updatedAt) {
+function stateFor(updatedAt, user = "owner") {
   return {
-    courses: [],
-    sessions: [{ id: "session-1", courseId: "course-1", course: "Integration", hasPdf: true, updatedAt, fileName: "integration.pdf", pageCount: 1 }],
-    memos: [],
+    courses: [{ id: `course-${user}`, title: `${user}講義` }],
+    sessions: [{ id: "session-1", courseId: `course-${user}`, course: `${user}講義`, hasPdf: true, updatedAt, fileName: "integration.pdf", pageCount: 1 }],
+    memos: [{ id: `memo-${user}`, text: `${user}-${updatedAt}メモ`, updatedAt }],
+    terms: ["2026年度 前期"],
+    activeTerm: "2026年度 前期",
+    campus: campusStateFor(user, updatedAt, 40),
+  };
+}
+
+function stateWithoutPdfFor(user, updatedAt, earnedCredits) {
+  const state = stateFor(updatedAt, user);
+  return { ...state, sessions: [], campus: campusStateFor(user, updatedAt, earnedCredits) };
+}
+
+function campusStateFor(user, updatedAt, earnedCredits) {
+  return {
+    schemaVersion: 1,
+    betaAccess: { enabled: true, activatedAt: "2026-08-24T00:00:00.000Z", importedLegacyAt: null },
+    assignments: [{ id: `assignment-${user}`, courseId: `course-${user}`, title: `${user}-${updatedAt}提出物`, dueISO: "2026-09-30", status: "todo" }],
+    assignmentTemplates: [],
+    exams: [{ id: `exam-${user}`, courseId: `course-${user}`, title: `${user}試験`, startsAtISO: "2026-10-01T09:00:00.000Z" }],
+    attendanceRecords: [{ id: `attendance-${user}`, courseId: `course-${user}`, dateISO: "2026-08-24", status: "present" }],
+    studyTasks: [{ id: `task-${user}`, sourceId: `assignment-${user}`, sourceType: "assignment", title: `${user}学習`, dueISO: "2026-09-29", status: "todo", doneAtISO: null }],
+    planningProfile: { supportMode: "standard", style: "steady", steadyDaysBeforeDue: 7, balancedDaysBeforeDue: 3, lastMinuteDaysBeforeDue: 1, showStudyOnDashboard: true, showStudyOnCalendar: true },
+    gpaProfile: { currentGpa: 3.2, earnedCredits, targetCumulativeGpa: 3.4, maxGpa: 4.3, plans: [{ id: `grade-${user}`, courseId: `course-${user}`, courseName: `${user}講義`, credits: 2, targetGrade: "A" }] },
+    degreePlan: { categories: [{ id: `degree-${user}`, name: `${user}卒業要件`, requiredCredits: 124, earnedCredits }] },
   };
 }
 
@@ -234,6 +309,32 @@ function manifestFor(state, bytes) {
 
 function syncBody(baseRevision, state, pdfs, deviceId) {
   return { baseRevision, schemaVersion: 8, state, deviceId, pdfIds: pdfs.map((item) => item.sessionId), pdfs };
+}
+
+async function commitState(baseUrl, headers, baseRevision, state, deviceId) {
+  const prepare = await jsonRequest(`${baseUrl}/api/sync/state`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(syncBody(baseRevision, state, [], deviceId)),
+  });
+  assert.equal(prepare.response.status, 200, JSON.stringify(prepare.body));
+  const commit = await jsonRequest(`${baseUrl}/api/sync/state`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ transactionId: prepare.body.transactionId }),
+  });
+  assert.equal(commit.response.status, 200, JSON.stringify(commit.body));
+  assert.equal(commit.body.revision, baseRevision + 1);
+}
+
+function assertAccountState(body, user, updatedAt, earnedCredits, revision) {
+  assert.equal(body.exists, true);
+  assert.equal(body.revision, revision);
+  assert.equal(body.state.memos[0].text, `${user}-${updatedAt}メモ`);
+  assert.equal(body.state.campus.assignments[0].title, `${user}-${updatedAt}提出物`);
+  assert.equal(body.state.campus.gpaProfile.earnedCredits, earnedCredits);
+  assert.equal(body.state.campus.degreePlan.categories[0].name, `${user}卒業要件`);
+  assert.equal(body.state.campus.degreePlan.categories[0].earnedCredits, earnedCredits);
 }
 
 function requestHeaders(email) {
