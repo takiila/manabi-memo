@@ -12,6 +12,13 @@ import {
 } from "../app/campus-model.ts";
 import { parseCampusAccessMode } from "../lib/server/campus-access-policy.ts";
 import { allowedAccountConfigurationValid, parseAllowedAccountEmails } from "../lib/server/account-access-policy.ts";
+import { localCampusPreviewEnabled } from "../app/local-campus-preview.ts";
+
+test("CMTRローカルプレビューは本番では有効にならない", () => {
+  assert.equal(localCampusPreviewEnabled("development", "true"), true);
+  assert.equal(localCampusPreviewEnabled("development", "false"), false);
+  assert.equal(localCampusPreviewEnabled("production", "true"), false);
+});
 
 test("2〜3人運営のメール許可リストを正規化して重複排除する", () => {
   assert.deepEqual(parseAllowedAccountEmails(" A@example.test, b@example.test;A@EXAMPLE.TEST\n c@example.test "), [

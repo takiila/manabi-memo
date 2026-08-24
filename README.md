@@ -40,6 +40,8 @@ Node.js 22.13以上を使用してください。
 
 Windowsでは、ZIPを展開した後に `START_WINDOWS.cmd` をダブルクリックすると、初回のパッケージ導入から開発サーバーの起動まで進められます。詳しくは [WINDOWS_SETUP.md](WINDOWS_SETUP.md) を参照してください。
 
+CMTRをFirebaseなしで画面レビューするときは、[`START_REVIEW_WINDOWS.cmd`](START_REVIEW_WINDOWS.cmd) をダブルクリックしてください。ローカル開発時だけCMTRを有効にし、`http://localhost:3000` で確認できます。本番buildではこのプレビューフラグは必ず無効になります。共有カレンダー、ログイン、端末間同期はプレビュー対象外です。
+
 ```bash
 npm install
 npm run dev

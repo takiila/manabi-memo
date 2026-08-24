@@ -75,6 +75,7 @@ import {
   processPdfLocally,
 } from "./pdf-local";
 import CampusModule from "./campus-module";
+import { localCampusPreviewEnabled } from "./local-campus-preview";
 import AccountSync from "./account-sync";
 import PdfReferenceCard from "./pdf-reference-card";
 import {
@@ -593,8 +594,10 @@ export default function HomePage() {
   const activeCourses = useMemo(() => activeOnly(courses), [courses]);
   const activeSessions = useMemo(() => activeOnly(sessions).filter((session) => activeCourses.some((course) => course.id === session.courseId)), [activeCourses, sessions]);
   const activeMemos = useMemo(() => activeOnly(memos).filter((memo) => activeSessions.some((session) => session.id === memo.sessionId)), [activeSessions, memos]);
-  const campusVisible = displayPreferences.campusMusterEnabled;
-  const campusAccessEnabled = (accountCampusEntitlement ?? campus.betaAccess.enabled) && campusVisible;
+  const localCampusPreview = localCampusPreviewEnabled();
+  const effectiveCampusEntitlement = localCampusPreview ? true : accountCampusEntitlement;
+  const campusVisible = localCampusPreview || displayPreferences.campusMusterEnabled;
+  const campusAccessEnabled = (effectiveCampusEntitlement ?? campus.betaAccess.enabled) && campusVisible;
 
   const selectedCourse = useMemo(
     () => activeCourses.find((course) => course.id === selectedCourseId) ?? null,
@@ -1610,9 +1613,9 @@ export default function HomePage() {
 
           {view === "campus" && campusVisible && (
             <CampusModule
-              campus={accountCampusEntitlement === null ? campus : normalizeCampusState({
+              campus={effectiveCampusEntitlement === null ? campus : normalizeCampusState({
                 ...campus,
-                betaAccess: { ...campus.betaAccess, enabled: accountCampusEntitlement },
+                betaAccess: { ...campus.betaAccess, enabled: effectiveCampusEntitlement },
               })}
               courses={activeCourses}
               terms={terms}
@@ -1623,7 +1626,8 @@ export default function HomePage() {
               onImportLegacy={importLegacyCampusData}
               onActivated={() => setAccountCampusEntitlement(true)}
               hasLegacyData={hasLegacyCampusData}
-              firebaseEnabled={firebaseEnabled}
+              firebaseEnabled={localCampusPreview ? true : firebaseEnabled}
+              localPreview={localCampusPreview}
             />
           )}
 
@@ -1672,7 +1676,7 @@ export default function HomePage() {
 
           {view === "settings" && (
             <SettingsView
-              campusEligible={accountCampusEntitlement ?? campus.betaAccess.enabled}
+              campusEligible={effectiveCampusEntitlement ?? campus.betaAccess.enabled}
               firebaseEnabled={firebaseEnabled}
               displayPreferences={displayPreferences}
               onChangeDisplay={setDisplayPreferences}

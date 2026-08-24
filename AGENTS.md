@@ -44,3 +44,13 @@
 保存形式を変更するときは、正規化、バックアップ復元、スキーマ版、旧データ読み込みを同時に更新します。同期を変更するときは、local-only、cloud-only、両方あり、競合、所有者不一致、削除済みクラウド、PDF版不一致を確認します。UI変更はPC幅とスマートフォン幅の両方で確認します。
 
 大きな `app/page.tsx` は挙動の互換性を優先して移植しています。新しい機能を追加するときは同ファイルへ積み増さず、ドメイン単位のコンポーネント、hook、modelへ分けてください。既存画面の分割は、保存・検索・ドラッグ・PDF操作の回帰テストを追加しながら段階的に行います。
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

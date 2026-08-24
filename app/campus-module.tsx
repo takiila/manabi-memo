@@ -63,6 +63,7 @@ export default function CampusModule({
   onActivated,
   hasLegacyData,
   firebaseEnabled,
+  localPreview = false,
 }: {
   campus: CampusState;
   courses: CampusCourse[];
@@ -75,6 +76,7 @@ export default function CampusModule({
   onActivated: () => void;
   hasLegacyData: boolean;
   firebaseEnabled: boolean | null;
+  localPreview?: boolean;
 }) {
   const [section, setSection] = useState<CampusSection>("today");
   const [termId, setTermId] = useState(activeTerm);
@@ -249,7 +251,9 @@ export default function CampusModule({
       {section === "calendar" && (
         <>
           <CampusCalendar month={calendarMonth} setMonth={setCalendarMonth} assignments={assignments} exams={exams} tasks={normalized.planningProfile.showStudyOnCalendar ? tasks : []} courseName={courseName} />
-          <SharedCampusCalendar termLabel={termId} courseOptions={activeCourses.map((course) => course.title)} />
+          {localPreview
+            ? <p className="campus-note">ローカルレビューでは個人用CMTR画面だけを確認できます。共有カレンダー、ログイン、端末間同期はFirebase等を設定した受入環境で確認してください。</p>
+            : <SharedCampusCalendar termLabel={termId} courseOptions={activeCourses.map((course) => course.title)} />}
         </>
       )}
 
