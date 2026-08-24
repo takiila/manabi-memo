@@ -1,4 +1,4 @@
-export type SharedCalendarKind = "assignment" | "check" | "event";
+export type SharedCalendarKind = "assignment" | "check" | "event" | "play";
 
 export type SharedCalendarMember = {
   email: string;
@@ -68,7 +68,7 @@ export function normalizeSharedCalendarSnapshot(value: unknown): SharedCalendarS
     });
     return [{
       id,
-      kind: item.kind === "check" || item.kind === "event" ? item.kind : "assignment",
+      kind: item.kind === "check" || item.kind === "event" || item.kind === "play" ? item.kind : "assignment",
       termLabel: cleanText(item.termLabel, 100),
       courseLabel: cleanText(item.courseLabel, 100),
       title,
@@ -97,7 +97,7 @@ export function incompleteMembers(event: SharedCalendarEvent, members: SharedCal
 }
 
 export function sharedCourseProgress(events: SharedCalendarEvent[], members: SharedCalendarMember[], termLabel?: string): SharedCourseProgress[] {
-  const active = events.filter((event) => !event.deletedAt && event.kind !== "event" && (!termLabel || event.termLabel === termLabel));
+  const active = events.filter((event) => !event.deletedAt && event.kind !== "event" && event.kind !== "play" && (!termLabel || event.termLabel === termLabel));
   const grouped = new Map<string, SharedCalendarEvent[]>();
   for (const event of active) {
     const key = event.courseLabel || "科目未設定";

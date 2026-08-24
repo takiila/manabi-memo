@@ -599,7 +599,27 @@
 }
 
 .shared-member-strip > strong { margin-right: 3px; }
-.shared-member-strip > span { overflow: hidden; border-radius: 999px; background: var(--green-soft); padding: 5px 9px; color: var(--green-dark); text-overflow: ellipsis; white-space: nowrap; }
+.shared-member-strip > span { display: inline-flex; overflow: hidden; align-items: center; gap: 5px; border-radius: 999px; padding: 5px 9px; text-overflow: ellipsis; white-space: nowrap; }
+.shared-member-strip > span > i,
+.shared-event-author > i { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: currentColor; }
+.shared-member-strip > span.member-tone-0,
+.shared-event-author.member-tone-0 { background: #e6f1e9; color: #37664a; }
+.shared-member-strip > span.member-tone-1,
+.shared-event-author.member-tone-1 { background: #e9eef9; color: #46638f; }
+.shared-member-strip > span.member-tone-2,
+.shared-event-author.member-tone-2 { background: #f7e9ed; color: #94556b; }
+
+.shared-calendar-filters {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: -10px 0 19px;
+}
+
+.shared-calendar-filters > strong { margin-right: 3px; color: #71807a; font-size: 10px; }
+.shared-calendar-filters button { display: inline-flex; min-height: 31px; align-items: center; gap: 6px; border: 1px solid #dbe0da; border-radius: 999px; background: #fffefa; padding: 0 10px; color: #6d7974; font-size: 10px; font-weight: 800; }
+.shared-calendar-filters button span { display: grid; min-width: 18px; height: 18px; place-items: center; border-radius: 9px; background: #eef0eb; font-size: 8px; }
+.shared-calendar-filters button.active { border-color: #8eab99; background: var(--green-soft); color: var(--green-dark); }
 
 .shared-month-toolbar {
   display: flex;
@@ -642,6 +662,10 @@
 
 .shared-calendar-event.check { background: #eef2fa; }
 .shared-calendar-event.event { background: #f7eee8; }
+.shared-calendar-event.play { background: #f8eef5; }
+.shared-calendar-event.member-tone-0 { border-left: 3px solid #4f8764; }
+.shared-calendar-event.member-tone-1 { border-left: 3px solid #5879ad; }
+.shared-calendar-event.member-tone-2 { border-left: 3px solid #ac627b; }
 .shared-calendar-event.selected { border-color: var(--green); box-shadow: 0 0 0 1px var(--green); }
 .shared-calendar-event small { overflow: hidden; color: #68766f; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .shared-calendar-event b { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
@@ -666,9 +690,11 @@
 .shared-kind { border-radius: 999px; background: #e7efe8; padding: 5px 9px; color: var(--green-dark); font-size: 10px; font-weight: 800; }
 .shared-kind.check { background: #e9eef8; color: #4e6488; }
 .shared-kind.event { background: #f5e9e0; color: #8a5c43; }
+.shared-kind.play { background: #f6e6ef; color: #8e4e69; }
 .shared-event-detail > small { display: block; margin-top: 14px; color: #73807a; font-size: 10px; }
 .shared-event-detail > h3 { margin: 4px 0 5px; font-size: 18px; line-height: 1.45; }
 .shared-event-detail > time { color: var(--green-dark); font-size: 12px; font-weight: 800; }
+.shared-event-author { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; border-radius: 999px; padding: 4px 8px; font-size: 9px; font-weight: 700; }
 .shared-event-note { margin: 13px 0; border-radius: 9px; background: #f4f5f1; padding: 10px; font-size: 11px; line-height: 1.7; white-space: pre-wrap; }
 
 .shared-incomplete { display: grid; gap: 3px; margin: 14px 0 8px; border-radius: 9px; background: #fff0e9; padding: 10px; color: #8f4f40; }
@@ -754,6 +780,7 @@
   .shared-stat-grid,
   .shared-progress-grid { grid-template-columns: 1fr; }
   .shared-member-strip { align-items: flex-start; flex-wrap: wrap; }
+  .shared-calendar-filters { flex-wrap: wrap; }
   .shared-month-toolbar .month-actions { width: 100%; justify-content: space-between; }
   .shared-month-toolbar .month-actions button:nth-child(2) { flex: 1; }
   .shared-calendar-unavailable { align-items: flex-start; flex-wrap: wrap; }
@@ -2663,6 +2690,17 @@ textarea:focus-visible,
   color: var(--green-dark);
 }
 
+.workspace-actions .pdf-lighten-button {
+  border-color: #d8c9aa;
+  background: #fffaf0;
+  color: #826e43;
+}
+
+.workspace-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .inline-progress,
 .inline-error {
   display: flex;
@@ -2686,6 +2724,118 @@ textarea:focus-visible,
   border-color: #efd8d1;
   background: #f7eae6;
   color: #965b4e;
+}
+
+.pdf-reference-card {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  border-bottom: 1px solid #e5dfd2;
+  background: #fffaf0;
+  padding: 13px 24px;
+}
+
+.pdf-reference-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid #dfcfad;
+  border-radius: 13px;
+  background: white;
+  color: #90733a;
+}
+
+.pdf-reference-copy {
+  min-width: 0;
+}
+
+.pdf-reference-copy > p:first-child {
+  margin: 0 0 2px;
+  color: #9a7b3f;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.pdf-reference-copy h2 {
+  margin: 0;
+  overflow: hidden;
+  color: #544b39;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-reference-copy > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 10px;
+  margin-top: 3px;
+  color: #786d59;
+  font-size: 8px;
+}
+
+.pdf-reference-copy > div label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pdf-reference-copy input {
+  width: 54px;
+  border: 1px solid #d8cab0;
+  border-radius: 7px;
+  background: white;
+  padding: 4px 6px;
+  color: #5c513b;
+  text-align: right;
+}
+
+.pdf-reference-pages {
+  margin: 4px 0 0;
+  color: #706551;
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.pdf-reference-copy > small {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+  color: #99886a;
+  font-size: 7px;
+  line-height: 1.5;
+}
+
+.pdf-reference-restore {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #d4c29d;
+  border-radius: 10px;
+  background: white;
+  padding: 0 11px;
+  color: #756037;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.pdf-reference-restore input {
+  display: none;
+}
+
+.notebook-pdf-reference {
+  margin-left: 8px;
+  color: #987b43;
+  font-size: 8px;
+  font-weight: 600;
 }
 
 .workspace-grid {
@@ -6722,6 +6872,22 @@ textarea:focus-visible,
 
   .review-course-notes > div:last-child {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .pdf-reference-card {
+    grid-template-columns: 42px minmax(0, 1fr);
+    padding: 12px 14px;
+  }
+
+  .pdf-reference-copy > small {
+    align-items: flex-start;
+  }
+
+  .pdf-reference-restore {
+    grid-column: 1 / -1;
+    justify-content: center;
   }
 }
 

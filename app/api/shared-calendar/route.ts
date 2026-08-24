@@ -54,7 +54,7 @@ export async function POST(request: Request) {
   const action = typeof body.action === "string" ? body.action : "";
   if (action === "create") {
     const fields = parseEventFields(body);
-    if (!fields) return json({ error: "課題・確認事項の入力内容を確認してください。" }, 400);
+    if (!fields) return json({ error: "共有予定の入力内容を確認してください。" }, 400);
     const id = crypto.randomUUID();
     const now = Date.now();
     await execute(
@@ -88,7 +88,7 @@ export async function POST(request: Request) {
 
   if (action === "update") {
     const fields = parseEventFields(body);
-    if (!fields) return json({ error: "課題・確認事項の入力内容を確認してください。" }, 400);
+    if (!fields) return json({ error: "共有予定の入力内容を確認してください。" }, 400);
     const now = Math.max(Date.now(), expectedUpdatedAt + 1);
     const result = await execute(
       "UPDATE shared_calendar_events SET kind = ?, term_label = ?, course_label = ?, title = ?, due_at = ?, note = ?, updated_by_email = ?, updated_at = ? WHERE id = ? AND updated_at = ? AND deleted_at IS NULL",
@@ -139,7 +139,7 @@ async function calendarSnapshot(currentUser: string, members: string[]): Promise
     members: members.map((email) => ({ email, displayName: profileNames.get(email) || email.split("@")[0] })),
     events: events.map((event): SharedCalendarEvent => ({
       id: event.id,
-      kind: event.kind === "check" || event.kind === "event" ? event.kind : "assignment",
+      kind: event.kind === "check" || event.kind === "event" || event.kind === "play" ? event.kind : "assignment",
       termLabel: event.term_label,
       courseLabel: event.course_label,
       title: event.title,
@@ -173,7 +173,7 @@ function configuredMembers(currentEmail: string) {
 }
 
 function parseEventFields(body: MutationBody) {
-  const kind: SharedCalendarKind | "" = body.kind === "assignment" || body.kind === "check" || body.kind === "event" ? body.kind : "";
+  const kind: SharedCalendarKind | "" = body.kind === "assignment" || body.kind === "check" || body.kind === "event" || body.kind === "play" ? body.kind : "";
   const title = text(body.title, 120);
   const termLabel = text(body.termLabel, 100);
   const courseLabel = text(body.courseLabel, 100);

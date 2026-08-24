@@ -5,8 +5,8 @@
 | URL / 表示 | 主な実装 | 内容 |
 |---|---|---|
 | `/` 時間割・講義・作業・見返し・設定 | `app/page.tsx` | まなびメモ本体、端末保存、検索、バックアップ |
-| `/` Campus Muster | `app/campus-module.tsx` | 任意表示の大学生活管理 |
-| `/` 共有カレンダー | `app/shared-campus-calendar.tsx` | 許可メンバーの課題・確認事項・予定と本人別完了 |
+| `/` 大学生活プラン / Campus Muster | `app/campus-module.tsx` | 任意表示の学業・遊びの統合管理 |
+| `/` 共有カレンダー | `app/shared-campus-calendar.tsx` | 許可メンバーの課題・確認事項・遊び候補と本人別の完了・参加可否 |
 | `/` アカウント・同期 | `app/account-sync.tsx` | Firebase、初回同期、競合、PDF同期 |
 | `/terms` | `app/terms/page.tsx` | 利用規約 |
 | `/privacy` | `app/privacy/page.tsx` | プライバシーポリシー |
@@ -17,10 +17,10 @@
 | データ | 主な参照 | 保存 |
 |---|---|---|
 | Course | `id`, `term`, 曜日、時限、教室 | IndexedDB、同期state |
-| SessionRecord | `courseId`, 本文、PDF情報、抽出本文 | IndexedDB、同期state |
+| SessionRecord | `courseId`, 本文、PDF情報、抽出本文、任意の軽量参照情報 | IndexedDB、同期state |
 | Memo | `sessionId`, `courseId`, タグ、位置、ピン、復習 | IndexedDB、同期state |
 | CampusState | 授業、提出物、試験、出席、学習タスク、GPA等 | IndexedDB、同期state |
-| SharedCalendar | 種類、学期、科目、期限、共有メモ、メンバー別完了 | サーバーDB、利用者別localStorageキャッシュ |
+| SharedCalendar | 種類、学期、科目/場所、期限、共有メモ、メンバー別の完了/参加可否 | サーバーDB、利用者別localStorageキャッシュ |
 | PDF本体 | Session ID、SHA-256、ノート版 | IndexedDB、Cloudflare R2 / Private Vercel Blob / ローカルファイル |
 | 同期メタデータ | Account ID、revision、fingerprint、device ID | localStorage、サーバーDB |
 
@@ -33,7 +33,9 @@
 5. 状態保存後、対応するノート版のPDFだけをSHA-256付きで `staging/` へ保存する。R2 / S3 / Vercel Blobでは短時間の署名URLでブラウザから直接転送し、確定前にサーバーが再検証して `accounts/` へコピーする。未確定の一時PDFはAPI掃除とR2 lifecycleの二重で回収する。
 6. オフライン中は端末保存を続け、復帰後にrevisionを再確認する。
 
-共有カレンダーは個人の同期stateとは別領域です。`ALLOWED_ACCOUNT_EMAILS` の2人以上だけが同じ予定を読み書きでき、完了行はFirebaseで認証した本人のメールに固定します。予定の更新は `updatedAt` を使った楽観的ロックで競合を止め、削除は30日間のごみ箱を経て完全削除します。端末キャッシュはオフライン表示専用で、オフライン変更は受け付けません。
+PDF軽量参照は利用者の明示操作でだけ作成します。PDF本体と抽出内容を原子的に削除し、ファイル名、総ページ数、最後に見たページ、メモのページ参照、SHA-256をstateへ残します。軽量参照は検索・オフラインPDF表示の対象外で、元PDFの再追加により完全保存へ戻せます。
+
+共有カレンダーは個人の同期stateとは別領域です。`ALLOWED_ACCOUNT_EMAILS` の2人以上だけが同じ予定を読み書きでき、回答行はFirebaseで認証した本人のメールに固定します。課題・確認事項では完了、遊び候補では参加可否として同じ安全な回答行を使います。共有画面へ明示登録していない個人予定は送信しません。予定の更新は `updatedAt` を使った楽観的ロックで競合を止め、削除は30日間のごみ箱を経て完全削除します。端末キャッシュはオフライン表示専用で、オフライン変更は受け付けません。
 
 現在のクラウドstateは互換性を優先したbundle単位です。将来entity単位へ移す場合も、schemaVersionと参照IDを保つ移行処理が必要です。
 

@@ -177,6 +177,35 @@ try {
   const afterExpiredRestore = await jsonRequest(`${origin}/api/shared-calendar`, { headers: owner });
   assert.equal(afterExpiredRestore.body.events.length, 0);
 
+  const createdPlayCandidate = await jsonRequest(`${origin}/api/shared-calendar`, {
+    method: "POST",
+    headers: owner,
+    body: JSON.stringify({
+      action: "create",
+      kind: "play",
+      termLabel: "2026年度 前期",
+      courseLabel: "梅田・映画",
+      title: "試験後の打ち上げ",
+      dueAt: "2026-09-18T18:30",
+      note: "集合場所と予算は全員の回答後に決める",
+    }),
+  });
+  assert.equal(createdPlayCandidate.response.status, 201, JSON.stringify(createdPlayCandidate.body));
+  const playCandidate = createdPlayCandidate.body.events.find((event) => event.kind === "play");
+  assert.equal(playCandidate.title, "試験後の打ち上げ");
+  for (const headers of [owner, other, third]) {
+    const answer = await jsonRequest(`${origin}/api/shared-calendar`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ action: "set-completion", eventId: playCandidate.id, completed: true }),
+    });
+    assert.equal(answer.response.status, 200);
+  }
+  const playOnOtherDevice = await jsonRequest(`${origin}/api/shared-calendar`, { headers: other });
+  const sharedPlayCandidate = playOnOtherDevice.body.events.find((event) => event.id === playCandidate.id);
+  assert.equal(sharedPlayCandidate.kind, "play");
+  assert.deepEqual(sharedPlayCandidate.completions.map((item) => item.email).sort(), ["other@example.test", "owner@example.test", "third@example.test"]);
+
   const firstPdf = new TextEncoder().encode("%PDF-1.4\n% manabi sync integration v1\n%%EOF\n");
   const firstState = stateFor("v1");
   const firstManifest = manifestFor(firstState, firstPdf);
@@ -368,7 +397,7 @@ try {
   const deletionMarker = await jsonRequest(`${origin}/api/sync/state`, { headers: owner });
   assert.equal(deletionMarker.body.deleted, true);
 
-  process.stdout.write("sync API integration: 3 users x PC/phone, shared calendar/completion/trash, Campus/CMTR graduation data, PDF integrity, conflict cleanup, account isolation, deletion passed\n");
+  process.stdout.write("sync API integration: 3 users x PC/phone, shared study/play responses and trash, Campus/CMTR graduation data, PDF integrity, conflict cleanup, account isolation, deletion passed\n");
 } finally {
   server.kill();
   await Promise.race([

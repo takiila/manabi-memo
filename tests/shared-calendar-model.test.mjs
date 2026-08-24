@@ -61,6 +61,7 @@ test("科目進捗は課題と確認事項だけをメンバー人数分で集�
     event("event-0000000003", { completions: members.slice(0, 2).map((member) => ({ email: member.email, completedAt: "2026-08-24T01:00:00.000Z" })) }),
     event("event-0000000004", { kind: "check", completions: [{ email: "owner@example.test", completedAt: "2026-08-24T01:00:00.000Z" }] }),
     event("event-0000000005", { kind: "event", completions: members.map((member) => ({ email: member.email, completedAt: "2026-08-24T01:00:00.000Z" })) }),
+    event("event-0000000008", { kind: "play", courseLabel: "梅田", title: "映画", completions: members.map((member) => ({ email: member.email, completedAt: "2026-08-24T01:00:00.000Z" })) }),
     event("event-0000000006", { termLabel: "別学期" }),
   ];
   const progress = sharedCourseProgress(events, members, "2026年度 前期");
@@ -70,6 +71,18 @@ test("科目進捗は課題と確認事項だけをメンバー人数分で集�
   assert.equal(progress[0].totalChecks, 6);
   assert.equal(progress[0].percent, 50);
   assert.deepEqual(progress[0].incompleteMembers.sort(), ["other@example.test", "third@example.test"]);
+});
+
+test("遊び候補と参加可否を共有キャッシュへ保持する", () => {
+  const normalized = normalizeSharedCalendarSnapshot({
+    currentUser: "owner@example.test",
+    members,
+    events: [event("event-0000000009", { kind: "play", courseLabel: "京都", title: "日帰り旅行", completions: [{ email: "third@example.test", completedAt: "2026-08-24T01:00:00.000Z" }] })],
+    fetchedAt: "2026-08-24T02:00:00.000Z",
+  });
+  assert.equal(normalized.events[0].kind, "play");
+  assert.equal(normalized.events[0].courseLabel, "京都");
+  assert.deepEqual(normalized.events[0].completions.map((item) => item.email), ["third@example.test"]);
 });
 
 test("共有キャッシュキーはメール表記を正規化する", () => {

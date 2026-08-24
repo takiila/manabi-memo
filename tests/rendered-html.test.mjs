@@ -74,3 +74,18 @@ test("主要導線とモバイル向けレイアウト契約を保つ", async ()
   assert.match(css, /\.mobile-nav/);
   assert.match(css, /min-height: 44px/);
 });
+
+test("新構想のPDF軽量参照と学び・遊び共有導線を保つ", async () => {
+  const [page, campus, shared, reference] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/campus-module.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/shared-campus-calendar.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/pdf-reference-card.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(page, /容量を軽くする/);
+  assert.match(reference, /元のPDFを再追加/);
+  assert.match(campus, /遊びも学びも、予定から整える/);
+  assert.match(shared, /遊び候補/);
+  assert.match(shared, /個人予定は自動共有されません/);
+  assert.match(shared, /参加できる/);
+});

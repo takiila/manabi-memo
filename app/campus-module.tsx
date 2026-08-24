@@ -154,9 +154,9 @@ export default function CampusModule({
       <header className="campus-header">
         <div>
           <button className="campus-back" type="button" onClick={onLeave}><ArrowLeft size={17} /> まなびメモへ</button>
-          <p className="campus-kicker">CAMPUS MUSTER · ACADEMIC PLANNER</p>
-          <h1>今日やることが、すぐ分かる。</h1>
-          <p>授業・提出物・試験を、まなびメモの講義と一緒に管理します。</p>
+          <p className="campus-kicker">PERFECT CAMPUS LIFE · CAMPUS MUSTER</p>
+          <h1>遊びも学びも、予定から整える。</h1>
+          <p>授業・提出物・試験と、仲間との遊び候補を、ひとつの大学生活プランとして管理します。</p>
         </div>
         <label className="campus-term-select">
           <span>表示する学期</span>
@@ -166,7 +166,7 @@ export default function CampusModule({
         </label>
       </header>
 
-      <nav className="campus-tabs" aria-label="Campus Musterメニュー">
+      <nav className="campus-tabs" aria-label="大学生活プランメニュー">
         <CampusTab active={section === "today"} icon={<CircleGauge size={18} />} label="今日" onClick={() => setSection("today")} />
         <CampusTab active={section === "assignments"} icon={<ClipboardList size={18} />} label="提出物" onClick={() => setSection("assignments")} />
         <CampusTab active={section === "calendar"} icon={<CalendarDays size={18} />} label="カレンダー" onClick={() => setSection("calendar")} />
@@ -307,15 +307,15 @@ function CampusAccessGate({ onLeave, onActivate, hasLegacyData, onImportLegacy, 
       <button className="campus-back" type="button" onClick={onLeave}><ArrowLeft size={17} /> まなびメモへ</button>
       <div className="campus-gate-card">
         <span className="campus-gate-icon"><LockKeyhole size={28} /></span>
-        <p className="campus-kicker">CAMPUS MUSTER · ACADEMIC PLANNER</p>
-        <h1>{firebaseEnabled === false ? "Campus Musterは準備中です。" : "大学生活の管理を、ひとつの場所へ。"}</h1>
+        <p className="campus-kicker">PERFECT CAMPUS LIFE · CAMPUS MUSTER</p>
+        <h1>{firebaseEnabled === false ? "大学生活プランは準備中です。" : "遊びも学びも、ひとつの場所へ。"}</h1>
         <p>{firebaseEnabled === false
           ? "Firebaseが設定されていないため、招待ベータの有効化はできません。時間割・ノート・PDFなど、まなびメモの端末内機能はそのまま利用できます。"
-          : "提出物、今日の授業、試験、出席を、まなびメモの時間割とつなげて管理する限定ベータです。Firebaseログイン後、招待コードで有効化できます。"}</p>
+          : "提出物、授業、試験、出席と、仲間との遊び候補を、まなびメモの時間割とつなげて管理する限定ベータです。Firebaseログイン後、招待コードで有効化できます。"}</p>
         {hasLegacyData && <button className="legacy-import-button" type="button" onClick={onImportLegacy}><RefreshCw size={17} /> この端末の旧CMTRデータを引き継ぐ</button>}
         {firebaseEnabled !== false && <form className="campus-code-form" onSubmit={submit}>
           <label><span>招待コード</span><div><KeyRound size={18} /><input value={code} onChange={(event) => setCode(event.target.value)} placeholder="コードを入力" autoComplete="one-time-code" /></div></label>
-          <button className="campus-primary" type="submit" disabled={status === "checking" || !code.trim()}>{status === "checking" ? "確認中…" : "Campus Musterを有効にする"}</button>
+          <button className="campus-primary" type="submit" disabled={status === "checking" || !code.trim()}>{status === "checking" ? "確認中…" : "大学生活プランを有効にする"}</button>
         </form>}
         {message && <p className="campus-form-error" role="alert">{message}</p>}
         <small>{firebaseEnabled === false

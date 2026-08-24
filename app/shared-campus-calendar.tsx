@@ -27,6 +27,7 @@ import {
 } from "./shared-calendar-model";
 
 type LoadStatus = "loading" | "ready" | "offline" | "signed-out" | "unavailable" | "error";
+type CalendarFilter = "all" | "study" | "play";
 type EventFormState = {
   eventId: string;
   expectedUpdatedAt: string;
@@ -42,6 +43,7 @@ const KIND_LABELS: Record<SharedCalendarKind, string> = {
   assignment: "課題",
   check: "確認事項",
   event: "予定",
+  play: "遊び候補",
 };
 
 export default function SharedCampusCalendar({ termLabel, courseOptions }: { termLabel: string; courseOptions: string[] }) {
@@ -49,6 +51,7 @@ export default function SharedCampusCalendar({ termLabel, courseOptions }: { ter
   const [status, setStatus] = useState<LoadStatus>("loading");
   const [message, setMessage] = useState("");
   const [month, setMonth] = useState(localMonth());
+  const [filter, setFilter] = useState<CalendarFilter>("all");
   const [selectedId, setSelectedId] = useState("");
   const [form, setForm] = useState<EventFormState | null>(null);
   const [saving, setSaving] = useState(false);
@@ -178,10 +181,13 @@ export default function SharedCampusCalendar({ termLabel, courseOptions }: { ter
   const trashedEvents = useMemo(() => (snapshot?.events ?? []).filter((event) => event.deletedAt), [snapshot]);
   const members = useMemo(() => snapshot?.members ?? [], [snapshot]);
   const selected = activeEvents.find((event) => event.id === selectedId) ?? null;
+  const visibleEvents = useMemo(() => activeEvents.filter((event) => filter === "all" || (filter === "play" ? event.kind === "play" : event.kind !== "play")), [activeEvents, filter]);
+  const studyEvents = useMemo(() => activeEvents.filter((event) => event.kind !== "play"), [activeEvents]);
+  const playEvents = useMemo(() => activeEvents.filter((event) => event.kind === "play"), [activeEvents]);
   const progress = useMemo(() => sharedCourseProgress(activeEvents, members, termLabel), [activeEvents, members, termLabel]);
-  const myPending = activeEvents.filter((event) => !event.completions.some((completion) => completion.email === snapshot?.currentUser)).length;
-  const groupPending = activeEvents.filter((event) => incompleteMembers(event, members).length > 0).length;
-  const groupDone = Math.max(0, activeEvents.length - groupPending);
+  const myPending = studyEvents.filter((event) => !event.completions.some((completion) => completion.email === snapshot?.currentUser)).length;
+  const groupPending = studyEvents.filter((event) => incompleteMembers(event, members).length > 0).length;
+  const allAvailable = playEvents.filter((event) => members.length > 0 && incompleteMembers(event, members).length === 0).length;
 
   const moveMonth = (offset: number) => {
     const date = new Date(`${month}-01T12:00:00`);
@@ -214,7 +220,7 @@ export default function SharedCampusCalendar({ termLabel, courseOptions }: { ter
       <div className="campus-content shared-calendar-content">
         <section className="shared-calendar-unavailable">
           <CalendarDays size={25} />
-          <div><h2>みんなの共有カレンダー</h2><p>{message}</p></div>
+          <div><h2>学びと遊びの共有カレンダー</h2><p>{message}</p></div>
           {status === "error" && <button className="campus-secondary" type="button" onClick={() => void refresh()}><RefreshCw size={15} /> 再試行</button>}
         </section>
       </div>
@@ -226,8 +232,8 @@ export default function SharedCampusCalendar({ termLabel, courseOptions }: { ter
       <header className="shared-calendar-heading">
         <div>
           <p className="campus-kicker">PRIVATE GROUP · {members.length || 0} MEMBERS</p>
-          <h2>みんなの共有カレンダー</h2>
-          <p>課題・確認事項・予定を許可メンバーで共有し、自分の完了だけをチェックできます。</p>
+          <h2>学びと遊びの共有カレンダー</h2>
+          <p>課題の完了と、遊び候補への参加可否を、許可された2〜3人だけで共有します。</p>
         </div>
         <div className="shared-calendar-actions">
           <button className="campus-secondary" type="button" disabled={saving} onClick={() => void refresh(snapshot?.currentUser)}><RefreshCw size={16} /> 更新</button>
@@ -239,23 +245,30 @@ export default function SharedCampusCalendar({ termLabel, courseOptions }: { ter
 
       <section className="shared-stat-grid" aria-label="共有カレンダーの概要">
         <SharedStat label="自分が未完了" value={myPending} note={snapshot?.currentUser || ""} />
-        <SharedStat label="誰かが未完了" value={groupPending} note={`共有 ${activeEvents.length}件中`} />
-        <SharedStat label="全員完了" value={groupDone} note={`${members.length}人で確認`} />
+        <SharedStat label="誰かが未完了" value={groupPending} note={`学び ${studyEvents.length}件中`} />
+        <SharedStat label="全員が参加OK" value={allAvailable} note={`遊び候補 ${playEvents.length}件中`} />
       </section>
 
       <section className="shared-member-strip" aria-label="共有メンバー">
         <Users size={17} />
         <strong>共有メンバー</strong>
-        {members.map((member) => <span key={member.email} title={member.email}>{member.displayName}{member.email === snapshot?.currentUser ? "（自分）" : ""}</span>)}
+        {members.map((member) => <span className={`member-tone-${memberTone(member.email, members)}`} key={member.email} title={member.email}><i aria-hidden="true" />{member.displayName}{member.email === snapshot?.currentUser ? "（自分）" : ""}</span>)}
       </section>
 
+      <div className="shared-calendar-filters" aria-label="表示する予定">
+        <strong>表示</strong>
+        <button type="button" className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>すべて <span>{activeEvents.length}</span></button>
+        <button type="button" className={filter === "study" ? "active" : ""} onClick={() => setFilter("study")}>学び <span>{studyEvents.length}</span></button>
+        <button type="button" className={filter === "play" ? "active" : ""} onClick={() => setFilter("play")}>遊び <span>{playEvents.length}</span></button>
+      </div>
+
       <div className="shared-month-toolbar">
-        <div><strong>{monthTitle(month)}</strong><small>予定を選ぶと、メモと未完了メンバーを確認できます。</small></div>
+        <div><strong>{monthTitle(month)}</strong><small>学びは完了、遊びは参加OKを、各メンバーが自分で回答します。</small></div>
         <div className="month-actions"><button type="button" aria-label="前の月" onClick={() => moveMonth(-1)}><ChevronLeft size={17} /></button><button type="button" onClick={() => setMonth(localMonth())}>今月</button><button type="button" aria-label="次の月" onClick={() => moveMonth(1)}><ChevronRight size={17} /></button></div>
       </div>
 
       <div className="shared-calendar-layout">
-        <SharedMonthCalendar month={month} events={activeEvents} members={members} selectedId={selectedId} onSelect={setSelectedId} />
+        <SharedMonthCalendar month={month} events={visibleEvents} members={members} selectedId={selectedId} onSelect={setSelectedId} />
         <SharedEventDetail
           event={selected}
           members={members}
@@ -313,7 +326,8 @@ function SharedMonthCalendar({ month, events, members, selectedId, onSelect }: {
         const visibleEvents = expandedDate === date ? dayEvents : dayEvents.slice(0, 3);
         return <div className={`calendar-cell shared-calendar-cell ${date === today ? "today" : ""}`} key={`${day ?? "blank"}-${index}`}><span>{day}</span>{visibleEvents.map((event) => {
           const complete = members.length - incompleteMembers(event, members).length;
-          return <button type="button" className={`shared-calendar-event ${event.kind} ${selectedId === event.id ? "selected" : ""}`} key={event.id} title={`${event.courseLabel} ${event.title} ${complete}/${members.length}完了`} onClick={() => onSelect(event.id)}><small>{event.courseLabel || KIND_LABELS[event.kind]}</small><b>{event.title}</b><em>{complete}/{members.length}</em></button>;
+          const responseLabel = event.kind === "play" ? "参加OK" : "完了";
+          return <button type="button" className={`shared-calendar-event ${event.kind} member-tone-${memberTone(event.createdBy, members)} ${selectedId === event.id ? "selected" : ""}`} key={event.id} title={`${event.courseLabel} ${event.title} ${complete}/${members.length}${responseLabel}`} onClick={() => onSelect(event.id)}><small>{event.courseLabel || KIND_LABELS[event.kind]}</small><b>{event.title}</b><em>{complete}/{members.length}</em></button>;
         })}{dayEvents.length > 3 && <button className="shared-calendar-more" type="button" onClick={() => setExpandedDate(expandedDate === date ? "" : date)}>{expandedDate === date ? "閉じる" : `ほか${dayEvents.length - 3}件`}</button>}</div>;
       })}</div>
     </div>
@@ -323,19 +337,21 @@ function SharedMonthCalendar({ month, events, members, selectedId, onSelect }: {
 function SharedEventDetail({ event, members, currentUser, saving, onToggle, onEdit, onTrash }: { event: SharedCalendarEvent | null; members: SharedCalendarSnapshot["members"]; currentUser: string; saving: boolean; onToggle: (event: SharedCalendarEvent, completed: boolean) => void; onEdit: (event: SharedCalendarEvent) => void; onTrash: (event: SharedCalendarEvent) => void }) {
   if (!event) return <aside className="shared-event-detail empty"><CalendarDays size={27} /><h3>予定を選択</h3><p>カレンダー内の項目を選ぶと、メモと全員の状況がここに表示されます。</p></aside>;
   const incomplete = incompleteMembers(event, members);
+  const isPlay = event.kind === "play";
   return (
     <aside className="shared-event-detail">
       <header><span className={`shared-kind ${event.kind}`}>{KIND_LABELS[event.kind]}</span><div><button type="button" aria-label="編集" disabled={saving} onClick={() => onEdit(event)}><Edit3 size={16} /></button><button className="danger" type="button" aria-label="ごみ箱へ移動" disabled={saving} onClick={() => onTrash(event)}><Trash2 size={16} /></button></div></header>
-      <small>{event.courseLabel || "科目未設定"}</small>
+      <small>{event.courseLabel || (isPlay ? "場所未設定" : "科目未設定")}</small>
       <h3>{event.title}</h3>
       <time dateTime={event.dueAt}>{formatDateTime(event.dueAt)}</time>
+      <span className={`shared-event-author member-tone-${memberTone(event.createdBy, members)}`}><i aria-hidden="true" />登録: {displayMember(event.createdBy, members)}</span>
       {event.note && <p className="shared-event-note">{event.note}</p>}
-      <div className={`shared-incomplete ${incomplete.length === 0 ? "complete" : ""}`}><strong>{incomplete.length === 0 ? "全員完了" : `未完了 ${incomplete.length}人`}</strong><span>{incomplete.length === 0 ? "この項目は全員がチェック済みです。" : incomplete.map((member) => member.displayName).join("、")}</span></div>
+      <div className={`shared-incomplete ${incomplete.length === 0 ? "complete" : ""}`}><strong>{isPlay ? (incomplete.length === 0 ? "全員が参加OK" : `参加OK ${event.completions.length}人`) : (incomplete.length === 0 ? "全員完了" : `未完了 ${incomplete.length}人`)}</strong><span>{incomplete.length === 0 ? (isPlay ? "この候補日は全員が参加できます。" : "この項目は全員がチェック済みです。") : `${isPlay ? "未回答" : "未完了"}: ${incomplete.map((member) => member.displayName).join("、")}`}</span></div>
       <div className="shared-member-checks">
         {members.map((member) => {
           const done = event.completions.some((completion) => completion.email === member.email);
           const isMe = member.email === currentUser;
-          return <div key={member.email}><span className={done ? "done" : ""}>{done ? <Check size={15} /> : <Circle size={15} />}<span><strong>{member.displayName}{isMe ? "（自分）" : ""}</strong><small>{done ? "完了" : "未完了"}</small></span></span>{isMe ? <button type="button" disabled={saving} onClick={() => onToggle(event, !done)}>{done ? "未完了に戻す" : "自分を完了にする"}</button> : <small>本人のみ変更可</small>}</div>;
+          return <div key={member.email}><span className={done ? "done" : ""}>{done ? <Check size={15} /> : <Circle size={15} />}<span><strong>{member.displayName}{isMe ? "（自分）" : ""}</strong><small>{done ? (isPlay ? "参加OK" : "完了") : (isPlay ? "未回答" : "未完了")}</small></span></span>{isMe ? <button type="button" disabled={saving} onClick={() => onToggle(event, !done)}>{done ? (isPlay ? "参加OKを取り消す" : "未完了に戻す") : (isPlay ? "参加できる" : "自分を完了にする")}</button> : <small>{isPlay ? "本人のみ回答可" : "本人のみ変更可"}</small>}</div>;
         })}
       </div>
       <footer>更新: {displayMember(event.updatedBy, members)} · {formatUpdatedAt(event.updatedAt)}</footer>
@@ -344,12 +360,13 @@ function SharedEventDetail({ event, members, currentUser, saving, onToggle, onEd
 }
 
 function SharedEventForm({ form, courseOptions, saving, onChange, onClose, onSubmit }: { form: EventFormState; courseOptions: string[]; saving: boolean; onChange: (next: EventFormState) => void; onClose: () => void; onSubmit: (event: FormEvent) => void }) {
+  const isPlay = form.kind === "play";
   return <div className="campus-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="campus-modal" role="dialog" aria-modal="true" aria-label={form.eventId ? "共有予定を編集" : "共有予定を追加"}><header><h2>{form.eventId ? "共有予定を編集" : "共有予定を追加"}</h2><button type="button" onClick={onClose} aria-label="閉じる">×</button></header><form className="campus-entry-form" onSubmit={onSubmit}>
-    <div className="campus-form-grid"><label><span>種類</span><select value={form.kind} onChange={(event) => onChange({ ...form, kind: event.target.value as SharedCalendarKind })}><option value="assignment">課題</option><option value="check">確認事項</option><option value="event">予定</option></select></label><label><span>学期</span><input value={form.termLabel} maxLength={100} required onChange={(event) => onChange({ ...form, termLabel: event.target.value })} /></label></div>
-    <label><span>タイトル</span><input value={form.title} maxLength={120} required autoFocus onChange={(event) => onChange({ ...form, title: event.target.value })} placeholder="レポート提出、履修確認など" /></label>
-    <div className="campus-form-grid"><label><span>科目</span><input list="shared-course-options" value={form.courseLabel} maxLength={100} onChange={(event) => onChange({ ...form, courseLabel: event.target.value })} placeholder="科目未設定でも保存可" /><datalist id="shared-course-options">{courseOptions.map((course) => <option value={course} key={course} />)}</datalist></label><label><span>日時</span><input type="datetime-local" value={form.dueAt} required onChange={(event) => onChange({ ...form, dueAt: event.target.value })} /></label></div>
-    <label><span>共有メモ</span><textarea value={form.note} maxLength={2000} onChange={(event) => onChange({ ...form, note: event.target.value })} placeholder="提出方法、持ち物、確認内容など" /></label>
-    <p className="campus-note">この内容は許可された共有メンバー全員に表示されます。完了状態は各メンバーが自分の分だけ変更できます。</p>
+    <div className="campus-form-grid"><label><span>種類</span><select value={form.kind} onChange={(event) => onChange({ ...form, kind: event.target.value as SharedCalendarKind })}><option value="assignment">課題</option><option value="check">確認事項</option><option value="event">予定</option><option value="play">遊び候補</option></select></label><label><span>学期</span><input value={form.termLabel} maxLength={100} required onChange={(event) => onChange({ ...form, termLabel: event.target.value })} /></label></div>
+    <label><span>タイトル</span><input value={form.title} maxLength={120} required autoFocus onChange={(event) => onChange({ ...form, title: event.target.value })} placeholder={isPlay ? "映画、旅行、打ち上げなど" : "レポート提出、履修確認など"} /></label>
+    <div className="campus-form-grid"><label><span>{isPlay ? "場所・遊びの種類" : "科目"}</span><input list={isPlay ? undefined : "shared-course-options"} value={form.courseLabel} maxLength={100} onChange={(event) => onChange({ ...form, courseLabel: event.target.value })} placeholder={isPlay ? "梅田、映画など（未設定でも可）" : "科目未設定でも保存可"} /><datalist id="shared-course-options">{courseOptions.map((course) => <option value={course} key={course} />)}</datalist></label><label><span>日時</span><input type="datetime-local" value={form.dueAt} required onChange={(event) => onChange({ ...form, dueAt: event.target.value })} /></label></div>
+    <label><span>共有メモ</span><textarea value={form.note} maxLength={2000} onChange={(event) => onChange({ ...form, note: event.target.value })} placeholder={isPlay ? "集合場所、予算、候補プランなど" : "提出方法、持ち物、確認内容など"} /></label>
+    <p className="campus-note">この内容だけが許可メンバーに表示され、個人予定は自動共有されません。{isPlay ? "参加可否" : "完了状態"}は各メンバーが自分の分だけ変更できます。</p>
     <div className="campus-modal-actions"><button type="button" className="campus-secondary" onClick={onClose}>キャンセル</button><button type="submit" className="campus-primary" disabled={saving}>{saving ? "保存中…" : "共有して保存"}</button></div>
   </form></section></div>;
 }
@@ -382,6 +399,11 @@ function readCache(email: string) {
 
 function memberNames(emails: string[], members: SharedCalendarSnapshot["members"]) {
   return emails.map((email) => members.find((member) => member.email === email)?.displayName || email.split("@")[0]);
+}
+
+function memberTone(email: string, members: SharedCalendarSnapshot["members"]) {
+  const index = members.findIndex((member) => member.email === email);
+  return index < 0 ? 0 : index % 3;
 }
 
 function displayMember(email: string, members: SharedCalendarSnapshot["members"]) {

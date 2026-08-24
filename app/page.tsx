@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  FileArchive,
   FileText,
   FolderOpen,
   GraduationCap,
@@ -60,6 +61,7 @@ import {
   requestPersistentStorage,
   restoreAppStateAndPdfs,
   saveAppState,
+  saveAppStateAndDeletePdfs,
   saveAppStateAndPdf,
 } from "./local-files";
 import { createBackupFile, inspectBackupFile, type InspectedBackup } from "./backup";
@@ -74,6 +76,14 @@ import {
 } from "./pdf-local";
 import CampusModule from "./campus-module";
 import AccountSync from "./account-sync";
+import PdfReferenceCard from "./pdf-reference-card";
+import {
+  fullPdfPatch,
+  isMatchingPdfReference,
+  makeLightweightPdfPatch,
+  normalizePdfReferenceFields,
+  sha256Blob,
+} from "./pdf-reference-model";
 import {
   EMPTY_CAMPUS_STATE,
   type CampusState,
@@ -142,6 +152,9 @@ type SessionRecord = {
   needsOcr: boolean;
   pdfWarnings?: string[];
   hasPdf: boolean;
+  pdfReferenceOnly?: boolean;
+  pdfReferenceSha256?: string;
+  pdfReleasedAt?: string | null;
   lastPdfPage: number;
   noteText: string;
   notebookPrefs: NotebookPrefs;
@@ -267,7 +280,7 @@ const PREVIOUS_STATE_KEYS = [
   "manabi-memo-state-v2",
 ];
 const LEGACY_STATE_KEY = "manabi-memo-state-v1";
-const CURRENT_SCHEMA_VERSION = 11;
+const CURRENT_SCHEMA_VERSION = 12;
 const DEFAULT_TERM = defaultAcademicTerm();
 const weekdays = [
   { value: 1, short: "月", label: "月曜日" },
@@ -931,6 +944,7 @@ export default function HomePage() {
           needsOcr: processed.needsOcr,
           pdfWarnings: processed.warnings,
           hasPdf: true,
+          ...fullPdfPatch(),
           lastPdfPage: existingSelection?.lastPdfPage ?? 1,
           noteText: existingSelection?.noteText ?? courseTemplates[selectedCourse.id] ?? "",
           notebookPrefs: existingSelection?.notebookPrefs ?? { ...defaultNotebookPrefs },
@@ -949,6 +963,7 @@ export default function HomePage() {
           topics: [],
           needsOcr: false,
           hasPdf: false,
+          ...fullPdfPatch(),
           lastPdfPage: 1,
           noteText: courseTemplates[selectedCourse.id] ?? "",
           notebookPrefs: { ...defaultNotebookPrefs },
@@ -988,6 +1003,14 @@ export default function HomePage() {
       });
       const latestSessions = (latestStateRef.current.sessions ?? sessions) as SessionRecord[];
       const currentSession = latestSessions.find((session) => session.id === activeSession.id) ?? activeSession;
+      const candidateSha256 = await sha256Blob(file);
+      if (currentSession.pdfReferenceOnly && !isMatchingPdfReference(currentSession, { sha256: candidateSha256, fileName: file.name, pageCount: processed.pageCount })) {
+        const proceed = window.confirm("以前参照していたPDFと一致しません。付箋のページ参照がずれる可能性があります。このPDFへ差し替えますか？");
+        if (!proceed) {
+          setPdfStatus({ message: "", progress: 0, error: "PDFの再追加をキャンセルしました。" });
+          return;
+        }
+      }
       const updated: SessionRecord = {
         ...currentSession,
         title: currentSession.title.endsWith("のメモ") || currentSession.title.endsWith("のノート")
@@ -1000,6 +1023,7 @@ export default function HomePage() {
         needsOcr: processed.needsOcr,
         pdfWarnings: processed.warnings,
         hasPdf: true,
+        ...fullPdfPatch(),
         lastPdfPage: 1,
         updatedAt: new Date().toISOString(),
       };
@@ -1083,6 +1107,44 @@ export default function HomePage() {
     storageChannel.current?.postMessage({ writerId: writerId.current, revision: saved.revision });
   }
 
+  async function releasePdfToReference(sessionId: string) {
+    const latestSessions = (latestStateRef.current.sessions ?? sessions) as SessionRecord[];
+    const target = latestSessions.find((session) => session.id === sessionId);
+    if (!target?.hasPdf || !window.confirm("PDF本体と抽出テキストをこの端末から外して、ファイル名・ページ数・付箋のページ参照だけを残します。元のPDFを再追加するまで表示とPDF本文検索はできません。続けますか？")) return;
+    try {
+      setPdfStatus({ message: "PDFを軽量な参照へ切り替えています", progress: 20, error: "" });
+      const storedPdf = await loadPdfFromDevice(sessionId);
+      if (!storedPdf) throw new Error("端末内のPDF本体を確認できませんでした。再追加してから軽量化してください。");
+      const sha256 = await sha256Blob(storedPdf);
+      setPdfStatus({ message: "参照情報を安全に保存しています", progress: 70, error: "" });
+      const updated: SessionRecord = {
+        ...target,
+        ...makeLightweightPdfPatch(target, sha256),
+        updatedAt: new Date().toISOString(),
+      };
+      const nextSessions = latestSessions.map((session) => session.id === sessionId ? updated : session);
+      const nextState = { ...currentSavedState(), sessions: nextSessions };
+      saveEpoch.current += 1;
+      await saveChain.current.catch(() => undefined);
+      setSaveStatus("saving");
+      const saved = await saveAppStateAndDeletePdfs(nextState, [sessionId], CURRENT_SCHEMA_VERSION, storageRevision.current, writerId.current);
+      storageRevision.current = saved.revision;
+      lastPersistedFingerprint.current = stateFingerprint(nextState);
+      setSessions(nextSessions);
+      setPdfBlob(null);
+      setShowPdf(false);
+      setLastSavedAt(saved.savedAt);
+      setSaveStatus("saved");
+      setStorageHealth(await getStorageHealth());
+      setPdfStatus({ message: "", progress: 0, error: "" });
+      storageChannel.current?.postMessage({ writerId: writerId.current, revision: saved.revision });
+      void recordLocalMetric("pdf_released_to_reference", { pageCount: target.pageCount });
+    } catch (cause) {
+      setSaveStatus("error");
+      setPdfStatus({ message: "", progress: 0, error: cause instanceof Error ? cause.message : "PDFを軽量化できませんでした。" });
+    }
+  }
+
   function createMemo(
     position: { x: number; y: number },
     source?: { text: string; start: number; end: number },
@@ -1096,7 +1158,7 @@ export default function HomePage() {
       course: activeSession.course,
       sessionNumber: activeSession.sessionNumber,
       sessionTitle: activeSession.title,
-      page: activeSession.hasPdf ? page : null,
+      page: activeSession.hasPdf || activeSession.pdfReferenceOnly ? page : null,
       text: source?.text ?? "",
       tags: [],
       x: position.x,
@@ -1443,7 +1505,7 @@ export default function HomePage() {
           </button>
           {campusVisible && <button className={view === "campus" ? "active campus-nav-button" : "campus-nav-button"} onClick={() => setView("campus")}>
             <GraduationCap size={19} />
-            <span>Campus Muster<small>大学生活管理</small></span>
+            <span>大学生活<small>学びも遊びも</small></span>
           </button>}
           <button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}>
             <Settings2 size={19} />
@@ -1657,6 +1719,7 @@ export default function HomePage() {
               deleteMemo={deleteMemo}
               attachPdf={attachPdf}
               attachPdfFile={attachPdfFile}
+              releasePdfToReference={releasePdfToReference}
               pdfStatus={pdfStatus}
               initialMemoId={focusedMemoId}
               saveStatus={saveStatus}
@@ -1676,7 +1739,7 @@ export default function HomePage() {
             <ListFilter size={20} /><span>見返す</span>
           </button>
           {campusVisible && <button className={view === "campus" ? "active" : ""} onClick={() => setView("campus")}>
-            <GraduationCap size={20} /><span>Campus</span>
+            <GraduationCap size={20} /><span>大学生活</span>
           </button>}
           <button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}>
             <Settings2 size={20} /><span>設定</span>
@@ -2739,6 +2802,7 @@ function WorkspaceView({
   deleteMemo,
   attachPdf,
   attachPdfFile,
+  releasePdfToReference,
   pdfStatus,
   initialMemoId,
   saveStatus,
@@ -2771,6 +2835,7 @@ function WorkspaceView({
   deleteMemo: (memoId: string) => void;
   attachPdf: (event: ChangeEvent<HTMLInputElement>) => void;
   attachPdfFile: (file: File) => Promise<void>;
+  releasePdfToReference: (sessionId: string) => Promise<void>;
   pdfStatus: { message: string; progress: number; error: string };
   initialMemoId: string | null;
   saveStatus: SaveStatus;
@@ -3117,12 +3182,17 @@ function WorkspaceView({
             <Settings2 size={17} /> ノート設定
           </button>
           {session.hasPdf ? (
-            <button className={showPdf ? "active" : ""} onClick={() => setShowPdf(!showPdf)}>
-              <FileText size={17} /> {showPdf ? "資料を閉じる" : "資料を開く"}
-            </button>
+            <>
+              <button className={showPdf ? "active" : ""} onClick={() => setShowPdf(!showPdf)}>
+                <FileText size={17} /> {showPdf ? "資料を閉じる" : "資料を開く"}
+              </button>
+              <button className="pdf-lighten-button" type="button" disabled={Boolean(pdfStatus.message)} onClick={() => void releasePdfToReference(session.id)} title="PDF本体を外して参照だけ残す">
+                <FileArchive size={17} /> 容量を軽くする
+              </button>
+            </>
           ) : (
             <label className="attach-button">
-              <Paperclip size={17} /> PDFを追加
+              <Paperclip size={17} /> {session.pdfReferenceOnly ? "PDFを再追加" : "PDFを追加"}
               <input type="file" accept="application/pdf,.pdf" onChange={attachPdf} disabled={Boolean(pdfStatus.message)} />
             </label>
           )}
@@ -3133,6 +3203,17 @@ function WorkspaceView({
         <div className="inline-progress"><LoaderCircle size={16} className="spin" /><span>{pdfStatus.message}</span><b>{pdfStatus.progress}%</b></div>
       )}
       {pdfStatus.error && <div className="inline-error"><AlertTriangle size={16} /> {pdfStatus.error}</div>}
+
+      {session.pdfReferenceOnly && <PdfReferenceCard
+        fileName={session.fileName ?? "講義資料.pdf"}
+        pageCount={Math.max(1, session.pageCount)}
+        lastPage={page}
+        memoPages={memos.flatMap((memo) => memo.page ? [memo.page] : [])}
+        releasedAt={session.pdfReleasedAt ?? null}
+        onPageChange={setPage}
+        onSelect={attachPdf}
+        disabled={Boolean(pdfStatus.message)}
+      />}
 
       <div
         className={showPdf && session.hasPdf ? `workspace-grid with-pdf pdf-${prefs.pdfPosition}` : "workspace-grid"}
@@ -3275,6 +3356,7 @@ function WorkspaceView({
                 <span>{session.course}</span>
                 <strong>{sessionLabel(session.sessionNumber)}</strong>
                 {session.hasPdf && <button onClick={() => setShowPdf(true)}>資料 {page}ページを表示</button>}
+                {session.pdfReferenceOnly && <span className="notebook-pdf-reference">資料 {page}ページを参照中</span>}
               </div>
 
               <textarea
@@ -3369,9 +3451,9 @@ function WorkspaceView({
                     {memo.sourceText ? (
                       <button onClick={() => returnToMemoSource(memo)}>元の文章へ戻る</button>
                     ) : <span>自動保存</span>}
-                    {memo.page && (
-                      <button onClick={() => { setPage(memo.page ?? 1); setShowPdf(true); }}>資料 {memo.page}ページ</button>
-                    )}
+                    {memo.page && (session.hasPdf
+                      ? <button onClick={() => { setPage(memo.page ?? 1); setShowPdf(true); }}>資料 {memo.page}ページ</button>
+                      : <span>資料 {memo.page}ページ参照</span>)}
                   </footer>
                   <button
                     type="button"
@@ -3942,18 +4024,28 @@ function normalizeSavedState(value: SavedState) {
 
   const sessions = rawSessions.map((session) => {
     const course = ensureCourse(session?.course, session?.courseId);
+    const hasPdf = Boolean(session.hasPdf);
+    const fileName = typeof session.fileName === "string" ? session.fileName.trim().slice(0, 260) : "";
+    const pageCount = typeof session.pageCount === "number" && Number.isFinite(session.pageCount)
+      ? clampNumber(Math.round(session.pageCount), 0, 10_000)
+      : 0;
+    const pdfReference = normalizePdfReferenceFields(session, hasPdf, fileName, pageCount);
     return {
       ...session,
       courseId: course.id,
       course: course.title,
-      pageTexts: Array.isArray(session.pageTexts) ? session.pageTexts : [],
-      topics: Array.isArray(session.topics) ? session.topics : [],
-      pdfWarnings: Array.isArray(session.pdfWarnings)
+      fileName,
+      pageCount,
+      pageTexts: pdfReference.pdfReferenceOnly ? [] : Array.isArray(session.pageTexts) ? session.pageTexts : [],
+      topics: pdfReference.pdfReferenceOnly ? [] : Array.isArray(session.topics) ? session.topics : [],
+      needsOcr: pdfReference.pdfReferenceOnly ? false : Boolean(session.needsOcr),
+      pdfWarnings: pdfReference.pdfReferenceOnly ? [] : Array.isArray(session.pdfWarnings)
         ? session.pdfWarnings.filter((warning): warning is string => typeof warning === "string").slice(0, 8)
         : [],
-      hasPdf: Boolean(session.hasPdf),
+      hasPdf,
+      ...pdfReference,
       lastPdfPage: typeof session.lastPdfPage === "number"
-        ? clampNumber(Math.round(session.lastPdfPage), 1, Math.max(1, session.pageCount || 1))
+        ? clampNumber(Math.round(session.lastPdfPage), 1, Math.max(1, pageCount))
         : 1,
       noteText: typeof session.noteText === "string" ? session.noteText : "",
       notebookPrefs: normalizeNotebookPrefs(session.notebookPrefs),
