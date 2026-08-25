@@ -482,9 +482,11 @@ export default function HomePage() {
           setAutoSaveEnabled(true);
           setSaveStatus("dirty");
         }
-      } catch {
+      } catch (cause) {
         if (!cancelled) {
-          setLoadError("端末の保存領域を利用できません。ブラウザの設定をご確認ください。");
+          setLoadError(cause instanceof Error
+            ? `${cause.message} 再試行しても開けない場合は、ブラウザのサイトデータを消さずにバックアップまたは復旧相談を行ってください。`
+            : "端末の保存領域を利用できません。データは変更していません。再試行してください。");
           setSaveStatus("error");
         }
       } finally {
@@ -1558,6 +1560,7 @@ export default function HomePage() {
               <small>{loadError || (saveStatus === "conflict" ? "どちらの内容を残すか選んでください。自動では上書きしません。" : "ページを閉じる前に、バックアップを書き出してください。")}</small>
             </span>
             <div className="storage-alert-actions">
+              {loadError && <button type="button" onClick={() => window.location.reload()}>端末データの読込を再試行</button>}
               {saveStatus === "conflict" && <button type="button" onClick={() => void exportNotebookData()}>このタブをバックアップ</button>}
               {saveStatus === "conflict" && <button type="button" onClick={() => void reloadSavedState()}>保存済みを再読込</button>}
               {loadError && <label className="reset-safety-check"><input type="checkbox" checked={resetBackupConfirmed} onChange={(event) => setResetBackupConfirmed(event.target.checked)} /><span>バックアップを保管した、または不要と確認しました</span></label>}

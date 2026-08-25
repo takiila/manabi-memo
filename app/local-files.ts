@@ -1,3 +1,5 @@
+import { settleWithin } from "./async-deadline";
+
 const DATABASE_NAME = "manabi-memo-local-files";
 const DATABASE_VERSION = 2;
 const PDF_STORE = "pdfs";
@@ -136,7 +138,11 @@ export async function saveAppStateAndDeletePdfs<T>(
 }
 
 export async function loadAppState<T>(): Promise<StoredAppState<T> | null> {
-  const database = await openDatabase();
+  const database = await settleWithin(
+    openDatabase(),
+    8_000,
+    "端末の保存領域から8秒以内に応答がありませんでした。データは変更していません。",
+  );
   try {
     const result = await requestAsPromise<StoredAppState<T> | undefined>(
       database.transaction(STATE_STORE, "readonly").objectStore(STATE_STORE).get(CURRENT_STATE_KEY),
