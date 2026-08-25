@@ -70,6 +70,8 @@ test("主要導線とモバイル向けレイアウト契約を保つ", async ()
   }
   assert.match(page, /PDFなしでも始められます/);
   assert.match(page, /PDFはこの端末内で処理/);
+  assert.match(page, /端末データの読込を再試行/);
+  assert.match(page, /サイトデータを消さずにバックアップまたは復旧相談/);
   assert.match(css, /@media \(max-width: 620px\)/);
   assert.match(css, /\.mobile-nav/);
   assert.match(css, /min-height: 44px/);

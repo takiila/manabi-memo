@@ -1,4 +1,4 @@
-import { settleWithin } from "./async-deadline";
+import { runResourceWithinDeadline } from "./async-deadline";
 
 const DATABASE_NAME = "manabi-memo-local-files";
 const DATABASE_VERSION = 2;
@@ -138,19 +138,23 @@ export async function saveAppStateAndDeletePdfs<T>(
 }
 
 export async function loadAppState<T>(): Promise<StoredAppState<T> | null> {
-  const database = await settleWithin(
-    openDatabase(),
-    8_000,
-    "端末の保存領域から8秒以内に応答がありませんでした。データは変更していません。",
-  );
-  try {
-    const result = await requestAsPromise<StoredAppState<T> | undefined>(
-      database.transaction(STATE_STORE, "readonly").objectStore(STATE_STORE).get(CURRENT_STATE_KEY),
-    );
-    return result ?? null;
-  } finally {
-    database.close();
-  }
+  let transaction: IDBTransaction | undefined;
+  const result = await runResourceWithinDeadline({
+    open: openDatabase,
+    use: async (database) => {
+      transaction = database.transaction(STATE_STORE, "readonly");
+      return requestAsPromise<StoredAppState<T> | undefined>(
+        transaction.objectStore(STATE_STORE).get(CURRENT_STATE_KEY),
+      );
+    },
+    close: (database) => database.close(),
+    milliseconds: 8_000,
+    message: "端末のノート読出し全体から8秒以内に応答がありませんでした。データは変更していません。",
+    onDeadline: () => {
+      try { transaction?.abort(); } catch { /* already completed or inactive */ }
+    },
+  });
+  return result ?? null;
 }
 
 export async function restoreAppStateAndPdfs<T>(
