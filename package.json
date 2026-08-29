@@ -22,7 +22,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1116.0",
-    "@aws-sdk/s3-request-presigner": "^3.1116.0",
+    "@aws-sdk/s3-request-presigner": "^3.1118.0",
     "@vercel/blob": "^2.8.0",
     "firebase": "^12.17.1",
     "lucide-react": "^1.30.0",
