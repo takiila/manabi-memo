@@ -14,7 +14,7 @@ R2 Standardには月10 GBのストレージ無料枠と無料のインターネ�
 
 ## 1. GitHub
 
-1. このリポジトリ用のprivate repositoryを作る。
+1. `takiila/manabi-memo` repositoryを使用する。portfolio公開と本番アプリの利用者データは分離し、secretや実データをGitへ含めない。
 2. `main`をpushする。
 3. `.env.local`、`.data`、`.next`、`node_modules`、`public/sw.js`が追跡されていないことを確認する。
 

@@ -1,0 +1,11 @@
+Copyright (c) 2026 takiila
+
+All rights reserved.
+
+The source code in this repository is made publicly available for portfolio,
+review, and educational inspection. No permission is granted to copy, modify,
+redistribute, sublicense, or use this project or substantial portions of it
+without prior written permission from the copyright holder.
+
+Third-party components remain subject to their respective licenses. See
+THIRD_PARTY_NOTICES.md and the dependency metadata in package-lock.json.

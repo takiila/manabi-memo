@@ -1,6 +1,50 @@
 # まなびメモ
 
-講義ごとに授業回、本文ノート、PDF、付箋をまとめ、検索・見返し・復習と、任意の大学生活プランによる「遊びも学びも整える」管理を行うWebアプリです。ChatGPT Site版 v21の画面・端末内データ・主要操作を保ったまま、標準Next.jsプロジェクトへ移行しています。
+[![CI](https://github.com/takiila/manabi-memo/actions/workflows/ci.yml/badge.svg)](https://github.com/takiila/manabi-memo/actions/workflows/ci.yml)
+
+講義ごとに授業回、本文ノート、PDF、付箋をまとめ、検索・見返し・復習と、任意の大学生活プランによる「遊びも学びも整える」管理を行う、大学生向けのoffline-first Webアプリです。ChatGPT Site版 v21を前身として、標準Next.jsプロジェクトへ移行しています。
+
+> **現在地:** 端末内で使う主要機能、同期API、3人×PC／スマートフォン相当の自動テスト、本番buildは確認済みです。実Firebase・Neon・Cloudflare R2を接続した公開環境と、問題が出た物理スマートフォンでの最終受入は継続中です。
+
+## 30秒で分かること
+
+- **課題:** 講義ノート、配布PDF、付箋、復習対象、提出物が別々になり、授業中と試験前で情報を探し直す負担がある。
+- **解決:** 時間割から講義と授業回を開き、ノート・PDF・付箋を同じ場所へ保存する。必要なPDFはオフラインでも閲覧できる。
+- **少人数共有:** 個人ノートやGPAは共有せず、明示登録した課題・確認事項・遊び候補だけを2〜3人で共有する。
+- **安全設計:** ログインだけで端末データを送信せず、同期競合、別アカウント、PDF不整合、読込失敗で既存データを自動上書きしない。
+
+## 利用の流れ
+
+```mermaid
+flowchart LR
+  A[時間割] --> B[講義・授業回]
+  B --> C[本文ノート]
+  B --> D[PDF表示・検索]
+  C --> E[付箋・復習]
+  D --> E
+  F[個人の大学生活プラン] --> G[課題・試験・GPA・卒業要件]
+  H[明示的に共有した予定] --> I[2〜3人の完了・参加可否]
+  G -. 個人データは共有しない .-> H
+```
+
+個人のノート・PDF・GPA・卒業要件と、共有カレンダーの予定は別の保存領域で扱います。
+
+## 自分で設計したこととCodexの利用
+
+このプロジェクトでは、利用場面、保存・共有の境界、壊してはいけないデータ、同期競合時の挙動、物理スマートフォンでの受入条件を人間が決め、Codexを実装・調査・テスト・文書化の共同作業者として利用しています。生成コードをそのまま完成扱いにせず、一次コード、テスト、本番build、実ブラウザ、実利用feedbackを突き合わせ、未確認事項は未確認のまま残します。
+
+具体的な役割分担、AI Memory、実機不具合からの改善例は [DEVELOPMENT_WITH_CODEX.md](DEVELOPMENT_WITH_CODEX.md) にまとめています。開発時にCodexへ守らせるデータ安全ルールは [AGENTS.md](AGENTS.md)、保存境界は [ARCHITECTURE.md](ARCHITECTURE.md) にあります。
+
+## 現在の完成範囲
+
+| 範囲 | 状態 |
+|---|---|
+| 時間割、講義、授業回、ノート、PDF、付箋、検索、復習 | 実装・ローカル検証済み |
+| IndexedDB保存、PDF込みbackup／restore、30日ごみ箱 | 実装・自動テスト済み |
+| 共有カレンダー、本人別の完了／参加可否 | 実装・3アカウントHTTP統合試験済み |
+| Firebase認証、PostgreSQL、R2／Private Blob同期 | 実装済み。実マネージド環境での受入待ち |
+| 物理スマートフォンの主要note／PDF導線 | 読込停止対策を実装。問題端末での再受入待ち |
+| 旧ChatGPT Siteとの完全なfeature-by-feature比較 | 未完了。現行実装と代表的移行ケースは検証済み |
 
 ## 主な機能
 
@@ -43,7 +87,7 @@ Windowsでは、ZIPを展開した後に `START_WINDOWS.cmd` をダブルクリ�
 CMTRをFirebaseなしで画面レビューするときは、[`START_REVIEW_WINDOWS.cmd`](START_REVIEW_WINDOWS.cmd) をダブルクリックしてください。ローカル開発時だけCMTRを有効にし、`http://localhost:3000` で確認できます。本番buildではこのプレビューフラグは必ず無効になります。共有カレンダー、ログイン、端末間同期はプレビュー対象外です。
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
@@ -143,6 +187,9 @@ AGENTS.md            Codex向け開発ルール
 ARCHITECTURE.md      画面・データ・保存境界
 MIGRATION_REPORT.md  調査結果と移行制約
 FEATURE_CHECKLIST.md 公開版との比較
+DEVELOPMENT_WITH_CODEX.md 人間とCodexの役割、AI Memory、検証方法
+LICENSE               独自コードの公開条件
+THIRD_PARTY_NOTICES.md 第三者softwareの通知
 ```
 
 ## 公開版データの移行
@@ -160,17 +207,17 @@ FEATURE_CHECKLIST.md 公開版との比較
 
 2〜3人の個人・非商用運営では、Vercel Hobby、Neon Free PostgreSQL、Cloudflare R2、既存Firebase Authenticationを使います。詳しい作成・設定・確認順は [`DEPLOYMENT_VERCEL.md`](DEPLOYMENT_VERCEL.md) を参照してください。
 
-GitHubのprivate repositoryをVercelへ接続すると、`main`へのpushごとにビルド・公開されます。デプロイごとにService Workerのキャッシュ版が変わり、利用中の端末には「今すぐ更新」が表示されます。Vercelのローカルファイルは永続化されないため、本番でSQLiteや `.data/objects` を正規保存先にしないでください。
+GitHub repositoryをVercelへ接続すると、`main`へのpushごとにビルド・公開されます。デプロイごとにService Workerのキャッシュ版が変わり、利用中の端末には「今すぐ更新」が表示されます。Vercelのローカルファイルは永続化されないため、本番でSQLiteや `.data/objects` を正規保存先にしないでください。
 
-## GitHubへ登録
+## GitHubで確認
 
-このフォルダはGitリポジトリとして初期化済みです。
+公開リポジトリは [takiila/manabi-memo](https://github.com/takiila/manabi-memo) です。clone後はNode.js 22.13以上で次を実行します。
 
 ```bash
-git add .
-git commit -m "Describe the change"
-git remote add origin https://github.com/USER/REPOSITORY.git
-git push -u origin main
+git clone https://github.com/takiila/manabi-memo.git
+cd manabi-memo
+npm ci
+npm run test:all
 ```
 
 `.env.local`、`.data`、依存関係、ビルド成果物、旧Sites/Wrangler成果物は `.gitignore` で除外されます。
@@ -184,3 +231,7 @@ git push -u origin main
 - 共有カレンダーは許可リストが2人以上のときだけ有効になり、完了・参加可否は認証中の本人分だけ更新します。個人予定は自動共有しません。
 - PDFは状態リビジョン、ノート版、SHA-256が一致した場合だけ同期します。
 - デプロイ先では、実Firebase・Neon PostgreSQL・Cloudflare R2を接続してから、3人のGoogle / Emailログイン、共有カレンダーと本人別完了、75 MB PDF、PC・スマートフォン間の双方向同期と個人データの相互分離を受入確認してください。
+
+## ライセンス
+
+このリポジトリの独自コードは [LICENSE](LICENSE) の条件で公開しています。依存ライブラリと同梱したPDF.js Workerの通知は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を参照してください。
