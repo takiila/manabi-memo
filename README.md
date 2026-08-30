@@ -29,11 +29,19 @@ flowchart LR
 
 個人のノート・PDF・GPA・卒業要件と、共有カレンダーの予定は別の保存領域で扱います。
 
-## 自分で設計したこととCodexの利用
+## この制作で担当したこと
 
-このプロジェクトでは、利用場面、保存・共有の境界、壊してはいけないデータ、同期競合時の挙動、物理スマートフォンでの受入条件を人間が決め、Codexを実装・調査・テスト・文書化の共同作業者として利用しています。生成コードをそのまま完成扱いにせず、一次コード、テスト、本番build、実ブラウザ、実利用feedbackを突き合わせ、未確認事項は未確認のまま残します。
+このプロジェクトでは、大学生活で実際に感じた不便を起点に、次の内容を自分で決めています。
 
-具体的な役割分担、AI Memory、実機不具合からの改善例は [DEVELOPMENT_WITH_CODEX.md](DEVELOPMENT_WITH_CODEX.md) にまとめています。開発時にCodexへ守らせるデータ安全ルールは [AGENTS.md](AGENTS.md)、保存境界は [ARCHITECTURE.md](ARCHITECTURE.md) にあります。
+- 時間割から講義・授業回・ノート・PDFへ進む主要導線
+- 個人ノート、GPA、卒業要件を共有しないデータ境界
+- 2〜3人で共有する課題、確認事項、遊び候補と、本人別の完了・参加可否
+- ログインだけでは端末データを送らないこと、競合や読込失敗でも既存データを自動上書きしないこと
+- 物理スマートフォンでの操作結果を含む、完成・未完成の受入条件
+
+Codexは実装、旧版調査、テスト、文書化の共同作業者として利用しました。生成結果をそのまま完成扱いにはせず、一次コード、テスト、本番build、実ブラウザ、実利用feedbackを突き合わせ、採否と優先順位は自分で判断しています。
+
+詳しい役割分担と実機不具合からの改善例は [DEVELOPMENT_WITH_CODEX.md](DEVELOPMENT_WITH_CODEX.md) にまとめています。開発時にCodexへ守らせるデータ安全ルールは [AGENTS.md](AGENTS.md)、保存境界は [ARCHITECTURE.md](ARCHITECTURE.md) にあります。判断・検証の内部記録や生の会話ログ、個人データは公開リポジトリへ含めていません。
 
 ## 現在の完成範囲
 
@@ -187,7 +195,7 @@ AGENTS.md            Codex向け開発ルール
 ARCHITECTURE.md      画面・データ・保存境界
 MIGRATION_REPORT.md  調査結果と移行制約
 FEATURE_CHECKLIST.md 公開版との比較
-DEVELOPMENT_WITH_CODEX.md 人間とCodexの役割、AI Memory、検証方法
+DEVELOPMENT_WITH_CODEX.md 人間とCodexの役割、非公開記録を使った検証方法
 LICENSE               独自コードの公開条件
 THIRD_PARTY_NOTICES.md 第三者softwareの通知
 ```

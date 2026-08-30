@@ -77,19 +77,21 @@ test("主要導線とモバイル向けレイアウト契約を保つ", async ()
   assert.match(css, /min-height: 44px/);
 });
 
-test("公開用READMEが目的・Codex利用・未完了事項を正直に示す", async () => {
+test("公開用READMEが目的・本人の担当・Codex利用・未完了事項を正直に示す", async () => {
   const [readme, development, migration] = await Promise.all([
     readFile(new URL("../README.md", import.meta.url), "utf8"),
     readFile(new URL("../DEVELOPMENT_WITH_CODEX.md", import.meta.url), "utf8"),
     readFile(new URL("../MIGRATION_REPORT.md", import.meta.url), "utf8"),
   ]);
   assert.match(readme, /30秒で分かること/);
-  assert.match(readme, /自分で設計したこととCodexの利用/);
+  assert.match(readme, /この制作で担当したこと/);
+  assert.match(readme, /採否と優先順位は自分で判断/);
   assert.match(readme, /実マネージド環境での受入待ち/);
-  assert.match(development, /AI Memory/);
+  assert.match(development, /非公開の開発記録/);
   assert.match(development, /人間が担当したこと/);
   assert.match(migration, /feature-by-feature監査/);
-  assert.doesNotMatch(`${readme}\n${migration}`, /taku180418/);
+  assert.doesNotMatch(`${readme}\n${development}\n${migration}`, /https?:\/\/[^\s`)]+\.chatgpt\.site\/?/i);
+  assert.doesNotMatch(`${readme}\n${development}\n${migration}`, /C:\\Users\\[^\\\s]+/i);
 });
 
 test("新構想のPDF軽量参照と学び・遊び共有導線を保つ", async () => {

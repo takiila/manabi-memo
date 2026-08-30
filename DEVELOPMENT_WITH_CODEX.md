@@ -29,9 +29,9 @@
 - 実機feedbackをTODO、設計ルール、回帰テストへ戻す
 - 未確認事項を、実装済み／対象環境でverifiedの二段階に分ける
 
-## AI Memory
+## 非公開の開発記録
 
-開発では、別のprivate Markdown repositoryをAI Memoryとして使っています。会話を丸ごと保存するのではなく、次の役割へ整理します。
+開発中の判断と検証状態は、公開リポジトリには含めない別のprivate Markdown repositoryで管理しています。会話を丸ごと保存するのではなく、次の役割へ整理します。
 
 | 文書 | 役割 |
 |---|---|
@@ -44,7 +44,7 @@
 | FEEDBACK | 実利用で起きた成功・摩擦・失敗 |
 | PROVENANCE | idea→decision→implementation→acceptanceの追跡 |
 
-AI Memoryは実装証拠の代わりにはしません。今回直接読んだsource、Git、test、build、実ブラウザ、物理端末の結果を優先し、矛盾した記録は更新します。API key、token、Cookie、実メール、個人noteやPDFは保存しません。
+非公開記録は実装証拠の代わりにはしません。今回直接読んだsource、Git、test、build、実ブラウザ、物理端末の結果を優先し、矛盾した記録は更新します。API key、token、Cookie、実メール、個人noteやPDFは保存しません。
 
 ## 実機feedbackから改善した例
 
