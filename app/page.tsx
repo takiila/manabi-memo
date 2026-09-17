@@ -1,5 +1,8 @@
 "use client";
 
+import { CourseTransferPanel } from "./course-transfer-panel";
+import { applyCourseImport, planCourseImport, type CourseInfo } from "./course-transfer";
+
 import {
   AlertTriangle,
   Archive,
@@ -125,7 +128,7 @@ type NoteReviewState = {
   timetableCourseId: string;
 };
 
-type Course = {
+type Course = CourseInfo & {
   id: string;
   title: string;
   term: string;
@@ -1678,6 +1681,18 @@ export default function HomePage() {
           )}
 
           {view === "settings" && (
+            <>
+            <CourseTransferPanel courses={courses} disabled={!autoSaveEnabled || Boolean(loadError) || saveStatus === "conflict" || saveStatus === "error"} onApply={(pack, updates) => {
+              const plan = planCourseImport(courses, pack);
+              if (plan.some(row => row.kind === "blocked")) return;
+              const next = applyCourseImport(courses, plan, updates);
+              setCourses(next);
+              const titles = new Map(next.map(course => [course.id, course.title]));
+              setSessions(current => current.map(session => titles.has(session.courseId) ? { ...session, course: titles.get(session.courseId)! } : session));
+              setMemos(current => current.map(memo => titles.has(memo.courseId) ? { ...memo, course: titles.get(memo.courseId)! } : memo));
+              setTerms(current => Array.from(new Set([...current, ...next.map(course => course.term)])));
+              setActiveTerm(pack.courses[0].term);
+            }} />
             <SettingsView
               campusEligible={effectiveCampusEntitlement ?? campus.betaAccess.enabled}
               firebaseEnabled={firebaseEnabled}
@@ -1695,6 +1710,7 @@ export default function HomePage() {
               memos={memos}
               onRestore={restoreTrashItem}
             />
+            </>
           )}
 
           {view === "workspace" && activeSession && (
@@ -2248,6 +2264,7 @@ function CourseDetailView({
           <button type="button" className="danger" onClick={onDelete}><Trash2 size={15} /> 削除</button>
         </div>
       </header>
+        <section className="course-transfer-panel" aria-label="講義の周辺情報"><h2>講義情報</h2><p>{course.code}{course.credits != null ? ` · ${course.credits}単位` : ""}</p><p style={{whiteSpace:"pre-wrap"}}>{course.assessment}</p><p style={{whiteSpace:"pre-wrap"}}>{course.notes}</p>{course.syllabusUrl && <a href={course.syllabusUrl} target="_blank" rel="noopener noreferrer">シラバスを開く</a>}</section>
       <div className="course-detail-layout">
         <aside className="course-overview-card"><span>この講義</span><dl><div><dt>授業回</dt><dd>{ordered.length}</dd></div><div><dt>付箋</dt><dd>{stickyCount}</dd></div><div><dt>PDF</dt><dd>{ordered.filter((item) => item.hasPdf).length}</dd></div></dl><button type="button" className="course-next-button" onClick={onStart}><Plus size={17} /> 第{nextSessionNumber(course.id, sessions)}回を始める</button><p>PDFは後からでも追加できます。まず本文だけで始めても大丈夫です。</p>{campusEnabled && <div className="course-campus-summary"><span><GraduationCap size={16} /> Campus Muster</span><p><strong>次の提出物</strong>{nextAssignment ? `${nextAssignment.title} · ${formatDateTime(nextAssignment.dueISO)}` : "登録なし"}</p><p><strong>次の試験</strong>{nextExam ? `${nextExam.title} · ${formatDateTime(nextExam.datetime)}` : "登録なし"}</p><button type="button" onClick={onOpenCampus}>大学生活管理を開く <ChevronRight size={15} /></button></div>}</aside>
         <section className="session-library"><div className="section-title"><div><p className="eyebrow">ALL CLASSES</p><h2>すべての授業回</h2></div></div>
@@ -3998,6 +4015,11 @@ function normalizeSavedState(value: SavedState) {
     const normalized: Course = {
       id: typeof course.id === "string" && course.id ? course.id : stableCourseId(course.title),
       title: course.title.trim(),
+      code: typeof course.code === "string" ? course.code.slice(0, 120) : undefined,
+      credits: typeof course.credits === "number" && Number.isFinite(course.credits) && course.credits >= 0 && course.credits <= 30 ? course.credits : null,
+      assessment: typeof course.assessment === "string" ? course.assessment.slice(0, 10000) : "",
+      notes: typeof course.notes === "string" ? course.notes.slice(0, 10000) : "",
+      syllabusUrl: typeof course.syllabusUrl === "string" && /^https?:\/\//i.test(course.syllabusUrl) ? course.syllabusUrl.slice(0, 10000) : "",
       term: typeof course.term === "string" && course.term.trim() ? course.term.trim() : DEFAULT_TERM,
       instructor: typeof course.instructor === "string" ? course.instructor : "",
       weekday: typeof course.weekday === "number" && course.weekday >= 1 && course.weekday <= 6 ? course.weekday : null,
