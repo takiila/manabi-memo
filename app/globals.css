@@ -7985,3 +7985,7 @@ textarea:focus-visible,
 }
 .course-import-row { border-top: 1px solid #d6dce5; padding: 14px 0; }
 .course-transfer-actions { display: flex; flex-wrap: wrap; }
+.timetable-catalog-dialog { max-height: 90dvh; overflow-y: auto; overflow-wrap: anywhere; }
+.timetable-catalog-dialog input[type="search"] { width: 100%; max-width: 100%; }
+.timetable-catalog-dialog .catalog-options { max-height: 30dvh; }
+.timetable-catalog-dialog dd { margin: 0; }

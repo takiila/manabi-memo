@@ -2,6 +2,7 @@
 
 import { CourseTransferPanel } from "./course-transfer-panel";
 import { UniversityInbox } from "./university-inbox";
+import { TimetableCatalogDialog } from "./timetable-catalog-dialog";
 import { EMPTY_INFORMATION_INBOX, normalizeInformationInbox } from "./manabi-import-model";
 import type { InformationInbox } from "./manabi-import-types";
 import { applyCourseImport, planCourseImport, type CourseInfo } from "./course-transfer";
@@ -1837,12 +1838,17 @@ export default function HomePage() {
       </div>
 
       {showCourseDialog && (
-        <CourseDialog
+        <TimetableCatalogDialog
+          key={JSON.stringify([activeTerm, courseDialogDefaults.weekday, courseDialogDefaults.period])}
+          inbox={inbox}
+          courses={courses}
+          term={activeTerm}
+          weekday={courseDialogDefaults.weekday}
+          period={courseDialogDefaults.period}
+          disabled={!autoSaveEnabled || Boolean(loadError) || ["loading", "conflict", "error"].includes(saveStatus)}
           onClose={() => setShowCourseDialog(false)}
-          onSubmit={registerCourse}
-          defaultTerm={activeTerm}
-          defaultWeekday={courseDialogDefaults.weekday}
-          defaultPeriod={courseDialogDefaults.period}
+          onImport={importInboxCourses}
+          renderManual={(onCatalog) => <CourseDialog onClose={() => setShowCourseDialog(false)} onSubmit={registerCourse} defaultTerm={activeTerm} defaultWeekday={courseDialogDefaults.weekday} defaultPeriod={courseDialogDefaults.period} onCatalog={onCatalog} />}
         />
       )}
 
@@ -2258,12 +2264,14 @@ function CourseDialog({
   defaultTerm,
   defaultWeekday,
   defaultPeriod,
+  onCatalog,
 }: {
   onClose: () => void;
   onSubmit: (input: CourseInput) => void;
   defaultTerm: string;
   defaultWeekday: number | null;
   defaultPeriod: number | null;
+  onCatalog: () => void;
 }) {
   useEffect(() => {
     function closeWithEscape(event: KeyboardEvent) {
@@ -2280,6 +2288,7 @@ function CourseDialog({
           <div><p className="eyebrow">NEW COURSE</p><h2 id="course-dialog-title">新しい講義を登録</h2><span>登録後、第1回の授業ノートから始められます。</span></div>
           <button className="dialog-close" type="button" aria-label="閉じる" onClick={onClose}><X size={19} /></button>
         </div>
+        <button type="button" onClick={onCatalog}>カタログから選ぶ</button>
         <CourseRegistrationForm
           onSubmit={onSubmit}
           defaultTerm={defaultTerm}
