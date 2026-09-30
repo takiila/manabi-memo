@@ -260,6 +260,7 @@ try {
   assert.equal(firstCloud.body.state.sessions[0].updatedAt, "v1");
   assert.equal(firstCloud.body.state.campus.degreePlan.categories[0].name, "owner卒業要件");
   assert.equal(firstCloud.body.state.campus.gpaProfile.earnedCredits, 40);
+  assert.deepEqual(firstCloud.body.state.inbox, stateFor('v1').inbox);
   assert.equal(firstCloud.body.pdfs.length, 1);
 
   const downloaded = await fetch(`${origin}/api/sync/pdf?sessionId=session-1`, { headers: owner });
@@ -415,6 +416,7 @@ function stateFor(updatedAt, user = "owner") {
     terms: ["2026年度 前期"],
     activeTerm: "2026年度 前期",
     campus: campusStateFor(user, updatedAt, 40),
+    inbox: { version: 1, records: [{ id: `inbox-${user}`, collection: 'example-university-2026', item: { id: 'guidance', type: 'event', title: `${user}ガイダンス`, source: { kind: 'memo', title: '架空の統合試験' }, data: { starts_at: '2026-11-06' } }, status: 'unread', importedAt: '2026-09-30T00:00:00Z', updatedAt: '2026-09-30T00:00:00Z', history: [] }] },
   };
 }
 

@@ -45,6 +45,7 @@ next-env.d.ts
 /dist/
 /outputs/
 /work/
+/docs/superpowers/
 /tmp/
 
 # editor and OS files

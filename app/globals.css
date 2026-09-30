@@ -7943,5 +7943,42 @@ textarea:focus-visible,
 .course-transfer-panel summary { cursor: pointer; padding: 12px 0; }
 .course-transfer-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
 .course-transfer-form { display: grid; grid-template-columns: repeat(auto-fit,minmax(210px,1fr)); gap: 12px; }
+
+.university-inbox { max-width: 1100px; margin: 0 auto; padding: 24px; min-width: 0; }
+.university-inbox header { margin-bottom: 24px; }
+.university-inbox h1 { font-size: 28px; margin: 8px 0; }
+.university-inbox p { line-height: 1.7; overflow-wrap: anywhere; }
+.inbox-card { background: var(--surface, #fff); border: 1px solid var(--line, #e3e7eb); border-radius: 18px; padding: 24px; margin-bottom: 24px; min-width: 0; }
+.inbox-card label { display: grid; gap: 8px; margin: 16px 0; font-weight: 600; }
+.inbox-card textarea, .inbox-card input[type="search"], .inbox-card select { width: 100%; min-width: 0; border: 1px solid #ccd3dd; border-radius: 10px; padding: 12px; background: #fff; color: #253046; font: inherit; }
+.inbox-card textarea { font-family: monospace; resize: vertical; }
+.inbox-card button { min-height: 44px; border: 1px solid #ccd3dd; border-radius: 10px; padding: 10px 16px; background: #edf3fa; color: #253046; cursor: pointer; }
+.inbox-card button:disabled { opacity: .5; cursor: default; }
+.inbox-card summary { cursor: pointer; padding: 12px 0; }
+.inbox-card pre { max-width: 100%; padding: 12px; background: #f5f7fa; border-radius: 10px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.inbox-actions, .inbox-item-heading { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.inbox-actions { justify-content: flex-start; }
+.inbox-item { border-top: 1px solid #dde3eb; padding: 20px 0; }
+.inbox-item h3, .inbox-item h4 { margin: 0; overflow-wrap: anywhere; }
+.inbox-card .inbox-check { display: flex; align-items: flex-start; gap: 10px; font-weight: 400; }
+.inbox-check input { width: 20px; height: 20px; flex-shrink: 0; }
+.inbox-warning { background: #fff6df; color: #684b12; border-radius: 10px; padding: 12px 12px 12px 30px; line-height: 1.7; overflow-wrap: anywhere; }
+.inbox-filters { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; gap: 16px; align-items: center; }
+.inbox-table-wrap { overflow-x: auto; margin: 12px 0; }
+.inbox-card table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.inbox-card caption { text-align: left; margin-bottom: 8px; }
+.inbox-card th, .inbox-card td { padding: 10px; border: 1px solid #dde3eb; text-align: left; vertical-align: top; overflow-wrap: anywhere; font-size: 13px; }
+.inbox-schedule { padding-left: 22px; }
+.inbox-schedule li { padding: 8px 0; }
+.inbox-schedule strong, .inbox-schedule span { display: block; overflow-wrap: anywhere; }
+.mobile-nav.has-inbox { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.mobile-nav.has-inbox.has-campus { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 620px) {
+  .university-inbox { padding: 16px 10px; }
+  .inbox-card { padding: 16px 12px; }
+  .inbox-filters { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .inbox-actions button { flex: 1 1 140px; }
+  .inbox-item-heading button { width: 100%; }
+}
 .course-import-row { border-top: 1px solid #d6dce5; padding: 14px 0; }
 .course-transfer-actions { display: flex; flex-wrap: wrap; }

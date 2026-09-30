@@ -547,7 +547,7 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
           {(phase === "choice" || phase === "conflict") && <div className="sync-choice" role="alert"><AlertTriangle size={21} /><div><h3>{cloud?.deleted ? "別の端末でクラウドデータが削除されています" : phase === "choice" ? "最初に残す内容を選んでください" : "この端末とクラウドの両方に変更があります"}</h3><p>{cloud?.deleted ? "この端末の内容は残しています。同期を再開するか、この端末では同期を停止するか選んでください。" : "自動では上書きしません。どちらかを選ぶまで、端末内の内容は変更されません。"}</p></div>{!cloud?.deleted && <div className="sync-compare"><SyncSummary label="この端末" state={currentState} pdfCount={pdfSessionIds(currentState).length} /><SyncSummary label="クラウド" state={cloud?.state} pdfCount={cloud?.pdfs.length ?? 0} /></div>}<button type="button" onClick={() => void uploadLocal(cloud?.revision ?? 0)}>この端末の内容をクラウドへ保存</button><button type="button" className="secondary" onClick={() => cloud?.deleted ? acceptRemoteDeletion() : void downloadCloud()}>{cloud?.deleted ? "この端末では同期を停止" : "クラウドの内容をこの端末へ反映"}</button></div>}
           {!meta?.enabled && phase !== "choice" && phase !== "conflict" && phase !== "account-mismatch" && <button type="button" className="account-primary full" onClick={() => void enableSync()}><Cloud size={18} /> クラウド同期を始める</button>}
           {meta?.enabled && phase !== "choice" && phase !== "conflict" && <div className="account-sync-actions"><button type="button" onClick={() => void reconcile()} disabled={phase === "syncing" || phase === "checking"}><RefreshCw size={17} /> 今すぐ同期</button><button type="button" onClick={stopSync}>自動同期を停止</button></div>}
-          <div className="account-sync-scope"><h3>同期する内容</h3><p>時間割・講義・授業回・ノート本文・付箋・タグ・Campus Musterの提出物、試験、出席、学習タスク、GPA計画、卒業要件・PDF</p><small>同じアカウントのPCとスマートフォンで共有され、別アカウントのデータとは分離されます。</small></div>
+          <div className="account-sync-scope"><h3>同期する内容</h3><p>時間割・講義・授業回・ノート本文・付箋・タグ・Campus Musterの提出物、試験、出席、学習タスク、GPA計画、卒業要件・大学情報Inbox・PDF</p><small>同じアカウントのPCとスマートフォンで共有され、別アカウントのデータとは分離されます。</small></div>
           {meta?.enabled && <button type="button" className="account-delete-cloud" onClick={() => void deleteCloud()}><Trash2 size={16} /> クラウド上の学習データを削除</button>}
         </>}
       </section>
@@ -557,18 +557,20 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
 
 function SyncSummary({ label, state, pdfCount }: { label: string; state: unknown; pdfCount: number }) {
   const summary = stateSummary(state);
-  return <section><strong>{label}</strong><dl><div><dt>講義</dt><dd>{summary.courses}</dd></div><div><dt>授業回</dt><dd>{summary.sessions}</dd></div><div><dt>付箋</dt><dd>{summary.memos}</dd></div><div><dt>提出物・試験</dt><dd>{summary.campus}</dd></div><div><dt>PDF</dt><dd>{pdfCount}</dd></div></dl></section>;
+  return <section><strong>{label}</strong><dl><div><dt>講義</dt><dd>{summary.courses}</dd></div><div><dt>授業回</dt><dd>{summary.sessions}</dd></div><div><dt>付箋</dt><dd>{summary.memos}</dd></div><div><dt>提出物・試験</dt><dd>{summary.campus}</dd></div><div><dt>大学情報</dt><dd>{summary.inbox}</dd></div><div><dt>PDF</dt><dd>{pdfCount}</dd></div></dl></section>;
 }
 
 function stateSummary(value: unknown) {
-  if (!value || typeof value !== "object") return { courses: 0, sessions: 0, memos: 0, campus: 0 };
+  if (!value || typeof value !== "object") return { courses: 0, sessions: 0, memos: 0, campus: 0, inbox: 0 };
   const state = value as Record<string, unknown>;
   const campus = state.campus && typeof state.campus === "object" ? state.campus as Record<string, unknown> : {};
+  const inbox = state.inbox && typeof state.inbox === "object" ? state.inbox as Record<string, unknown> : {};
   return {
     courses: Array.isArray(state.courses) ? state.courses.length : 0,
     sessions: Array.isArray(state.sessions) ? state.sessions.length : 0,
     memos: Array.isArray(state.memos) ? state.memos.length : 0,
     campus: (Array.isArray(campus.assignments) ? campus.assignments.length : 0) + (Array.isArray(campus.exams) ? campus.exams.length : 0),
+    inbox: Array.isArray(inbox.records) ? inbox.records.length : 0,
   };
 }
 

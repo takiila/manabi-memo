@@ -1,0 +1,49 @@
+export type ImportDate = string | null;
+export type ImportSource = {
+  kind: 'pdf' | 'email' | 'web' | 'screenshot' | 'message' | 'syllabus' | 'memo' | 'other';
+  title: string;
+  url?: string | null;
+  locator?: string | null;
+  excerpt?: string | null;
+  published_at?: ImportDate;
+};
+export type ImportDataMap = {
+  event: { starts_at?: ImportDate; ends_at?: ImportDate; location?: string | null; url?: string | null };
+  deadline: { due_at?: ImportDate; submission_url?: string | null; instructions?: string | null };
+  assignment: { due_at?: ImportDate; course_code?: string | null; instructions?: string | null; submission_url?: string | null };
+  announcement: { published_at?: ImportDate; url?: string | null };
+  seminar: { academic_year?: number | null; guidance_at?: ImportDate; application_start?: ImportDate; application_end?: ImportDate; selection_method?: string | null; result_at?: ImportDate; capacity?: number | null };
+  laboratory: { teacher_ids?: string[]; research_fields?: string[]; themes?: string[]; capacity?: number | null; selection_method?: string | null; guidance_at?: ImportDate; website?: string | null };
+  teacher: { name?: string | null; affiliation?: string | null; research_fields?: string[]; email?: string | null; website?: string | null };
+  course: { code?: string | null; term?: string | null; instructor?: string | null; credits?: number | null; weekday?: number | null; period?: number | null; room?: string | null; syllabus_url?: string | null };
+  exam: { starts_at?: ImportDate; ends_at?: ImportDate; course_code?: string | null; location?: string | null; scope?: string | null };
+  registration: { opens_at?: ImportDate; closes_at?: ImportDate; procedure?: string | null; submission_url?: string | null };
+  document: { url?: string | null; filename?: string | null };
+};
+export type ImportItemType = keyof ImportDataMap;
+export type ImportItem = { [Kind in ImportItemType]: {
+  id: string;
+  type: Kind;
+  title: string;
+  source: ImportSource;
+  data: ImportDataMap[Kind];
+  summary?: string | null;
+  term?: string | null;
+  tags?: string[];
+  related_ids?: string[];
+  needs_review?: boolean;
+  uncertainties?: string[];
+  extensions?: Record<string, string | number | boolean | null>;
+} }[ImportItemType];
+export type ManabiImport = { schema_version: '1.0'; collection: string; generated_at?: string; items: ImportItem[] };
+export type InformationRecord = {
+  id: string;
+  collection: string;
+  item: ImportItem;
+  status: 'unread' | 'read';
+  importedAt: string;
+  updatedAt: string;
+  history: { item: ImportItem; replacedAt: string }[];
+};
+export type InformationInbox = { version: 1; records: InformationRecord[] };
+export type ImportPlanRow = { item: ImportItem; kind: 'add' | 'update' | 'same' | 'blocked'; existing?: InformationRecord; warnings: string[] };

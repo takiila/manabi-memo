@@ -1,0 +1,160 @@
+{
+  "schema_version": "1.0",
+  "collection": "example-university-all-types",
+  "items": [
+    {
+      "id": "sample-event",
+      "type": "event",
+      "title": "event サンプル（架空）",
+      "source": {
+        "kind": "memo",
+        "title": "架空の入力例"
+      },
+      "data": {},
+      "needs_review": true,
+      "uncertainties": [
+        "種別別データは未確認です。"
+      ]
+    },
+    {
+      "id": "sample-deadline",
+      "type": "deadline",
+      "title": "deadline サンプル（架空）",
+      "source": {
+        "kind": "memo",
+        "title": "架空の入力例"
+      },
+      "data": {},
+      "needs_review": true,
+      "uncertainties": [
+        "種別別データは未確認です。"
+      ]
+    },
+    {
+      "id": "sample-assignment",
+      "type": "assignment",
+      "title": "assignment サンプル（架空）",
+      "source": {
+        "kind": "memo",
+        "title": "架空の入力例"
+      },
+      "data": {},
+      "needs_review": true,
+      "uncertainties": [
+        "種別別データは未確認です。"
+      ]
+    },
+    {
+      "id": "sample-announcement",
+      "type": "announcement",
+      "title": "announcement サンプル（架空）",
+      "source": {
+        "kind": "memo",
+        "title": "架空の入力例"
+      },
+      "data": {},
+      "needs_review": true,
+      "uncertainties": [
+        "種別別データは未確認です。"
+      ]
+    },
+    {
+      "id": "sample-seminar",
+      "type": "seminar",
+      "title": "seminar サンプル（架空）",
+      "source": {
+        "kind": "memo",
+        "title": "架空の入力例"
+      },
+      "data": {},
+      "needs_review": true,
+      "uncertainties": [
+        "種別別データは未確認です。"
+      ]
+    },
+    {
+      "id": "sample-laboratory",
+      "type": "laboratory",
+      "title": "laboratory サンプル（架空）",
+      "source": {
+        "kind": "memo",
+        "title": "架空の入力例"
+      },
+      "data": {},
+      "needs_review": true,
+      "uncertainties": [
+        "種別別データは未確認です。"
+      ]
+    },
+    {
+      "id": "sample-teacher",
+      "type": "teacher",
+      "title": "teacher サンプル（架空）",
+      "source": {
+        "kind": "memo",
+        "title": "架空の入力例"
+      },
+      "data": {},
+      "needs_review": true,
+      "uncertainties": [
+        "種別別データは未確認です。"
+      ]
+    },
+    {
+      "id": "sample-course",
+      "type": "course",
+      "title": "course サンプル（架空）",
+      "source": {
+        "kind": "memo",
+        "title": "架空の入力例"
+      },
+      "data": {},
+      "needs_review": true,
+      "uncertainties": [
+        "種別別データは未確認です。"
+      ]
+    },
+    {
+      "id": "sample-exam",
+      "type": "exam",
+      "title": "exam サンプル（架空）",
+      "source": {
+        "kind": "memo",
+        "title": "架空の入力例"
+      },
+      "data": {},
+      "needs_review": true,
+      "uncertainties": [
+        "種別別データは未確認です。"
+      ]
+    },
+    {
+      "id": "sample-registration",
+      "type": "registration",
+      "title": "registration サンプル（架空）",
+      "source": {
+        "kind": "memo",
+        "title": "架空の入力例"
+      },
+      "data": {},
+      "needs_review": true,
+      "uncertainties": [
+        "種別別データは未確認です。"
+      ]
+    },
+    {
+      "id": "sample-document",
+      "type": "document",
+      "title": "document サンプル（架空）",
+      "source": {
+        "kind": "memo",
+        "title": "架空の入力例"
+      },
+      "data": {},
+      "needs_review": true,
+      "uncertainties": [
+        "種別別データは未確認です。"
+      ]
+    }
+  ]
+}

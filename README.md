@@ -15,6 +15,8 @@
 
 ## 利用の流れ
 
+大学の案内やゼミ情報はメニューの **大学情報Inbox** から取り込めます。「AI向け依頼文をコピー」で各自のChatGPT/Claude/Gemini/ローカルLLMへ資料を渡し、返されたManabi Import Schema JSONを貼り付けます。解析・出典確認・重複/更新比較・個別選択を経て、確定した情報だけを端末に保存します。アプリにAI APIは内蔵せず、大学資料をAIへ自動送信しません。仕様・例・拡張方針は [docs/import-schema.md](docs/import-schema.md) を参照してください。
+
 ```mermaid
 flowchart LR
   A[時間割] --> B[講義・授業回]

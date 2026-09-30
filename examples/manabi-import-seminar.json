@@ -1,0 +1,134 @@
+{
+  "schema_version": "1.0",
+  "collection": "example-university-seminar-2026",
+  "items": [
+    {
+      "id": "guidance-2026",
+      "type": "event",
+      "title": "ゼミ配属ガイダンス（架空）",
+      "source": {
+        "kind": "pdf",
+        "title": "架空大学 2026年度ゼミ配属案内（サンプル）",
+        "locator": "1ページ",
+        "excerpt": "この例は架空の資料です。実際の日程ではありません。"
+      },
+      "data": {
+        "starts_at": "2026-11-06T14:20:00+09:00",
+        "location": "架空大学 講堂"
+      },
+      "related_ids": [
+        "allocation-2026"
+      ]
+    },
+    {
+      "id": "application-2026",
+      "type": "registration",
+      "title": "ゼミ希望調査（架空）",
+      "source": {
+        "kind": "pdf",
+        "title": "架空大学 2026年度ゼミ配属案内（サンプル）",
+        "locator": "1ページ",
+        "excerpt": "この例は架空の資料です。実際の日程ではありません。"
+      },
+      "data": {
+        "opens_at": "2026-11-07",
+        "closes_at": "2026-11-20",
+        "procedure": "学内教務システムで提出"
+      },
+      "related_ids": [
+        "allocation-2026"
+      ]
+    },
+    {
+      "id": "application-deadline-2026",
+      "type": "deadline",
+      "title": "ゼミ希望調査の提出期限（架空）",
+      "source": {
+        "kind": "pdf",
+        "title": "架空大学 2026年度ゼミ配属案内（サンプル）",
+        "locator": "1ページ",
+        "excerpt": "この例は架空の資料です。実際の日程ではありません。"
+      },
+      "data": {
+        "due_at": "2026-11-20"
+      },
+      "uncertainties": [
+        "締切時刻は資料に記載がありません。終日締切として保持してください。"
+      ]
+    },
+    {
+      "id": "allocation-2026",
+      "type": "seminar",
+      "title": "2026年度 ゼミ配属（架空）",
+      "source": {
+        "kind": "pdf",
+        "title": "架空大学 2026年度ゼミ配属案内（サンプル）",
+        "locator": "1ページ",
+        "excerpt": "この例は架空の資料です。実際の日程ではありません。"
+      },
+      "data": {
+        "academic_year": 2026,
+        "guidance_at": "2026-11-06T14:20:00+09:00",
+        "application_start": "2026-11-07",
+        "application_end": "2026-11-20",
+        "selection_method": null,
+        "result_at": null
+      },
+      "uncertainties": [
+        "選抜方法と結果発表日は未発表です。"
+      ],
+      "related_ids": [
+        "lab-security"
+      ]
+    },
+    {
+      "id": "teacher-example",
+      "type": "teacher",
+      "title": "山田サンプル教授（架空）",
+      "source": {
+        "kind": "pdf",
+        "title": "架空大学 2026年度ゼミ配属案内（サンプル）",
+        "locator": "1ページ",
+        "excerpt": "この例は架空の資料です。実際の日程ではありません。"
+      },
+      "data": {
+        "name": "山田サンプル",
+        "affiliation": "架空大学 情報学部",
+        "research_fields": [
+          "情報セキュリティ"
+        ]
+      }
+    },
+    {
+      "id": "lab-security",
+      "type": "laboratory",
+      "title": "セキュリティ研究室（架空）",
+      "source": {
+        "kind": "pdf",
+        "title": "架空大学 2026年度ゼミ配属案内（サンプル）",
+        "locator": "1ページ",
+        "excerpt": "この例は架空の資料です。実際の日程ではありません。"
+      },
+      "data": {
+        "teacher_ids": [
+          "teacher-example"
+        ],
+        "research_fields": [
+          "情報セキュリティ",
+          "プライバシー"
+        ],
+        "themes": [
+          "個人情報の安全な利用"
+        ],
+        "capacity": null,
+        "selection_method": null,
+        "guidance_at": null,
+        "website": "https://example.com/laboratory"
+      },
+      "related_ids": [
+        "teacher-example"
+      ],
+      "needs_review": true
+    }
+  ]
+}

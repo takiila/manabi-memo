@@ -1,6 +1,9 @@
 "use client";
 
 import { CourseTransferPanel } from "./course-transfer-panel";
+import { UniversityInbox } from "./university-inbox";
+import { EMPTY_INFORMATION_INBOX, normalizeInformationInbox } from "./manabi-import-model";
+import type { InformationInbox } from "./manabi-import-types";
 import { applyCourseImport, planCourseImport, type CourseInfo } from "./course-transfer";
 
 import {
@@ -115,7 +118,7 @@ import {
   type DisplayPreferences,
 } from "./data-safety-model";
 
-type View = "start" | "course" | "review" | "workspace" | "campus" | "settings";
+type View = "start" | "course" | "review" | "workspace" | "campus" | "inbox" | "settings";
 type TagScope = "global" | "course";
 type SaveStatus = "loading" | "dirty" | "saving" | "saved" | "error" | "conflict";
 type NoteReviewState = {
@@ -222,6 +225,7 @@ type SavedState = {
   activeTerm?: string;
   tutorialSeen?: boolean;
   campus?: CampusState;
+  inbox?: InformationInbox;
   displayPreferences?: DisplayPreferences;
 };
 
@@ -236,6 +240,7 @@ type NormalizedState = {
   activeTerm: string;
   tutorialSeen: boolean;
   campus: CampusState;
+  inbox: InformationInbox;
   displayPreferences: DisplayPreferences;
 };
 
@@ -284,7 +289,7 @@ const PREVIOUS_STATE_KEYS = [
   "manabi-memo-state-v2",
 ];
 const LEGACY_STATE_KEY = "manabi-memo-state-v1";
-const CURRENT_SCHEMA_VERSION = 12;
+const CURRENT_SCHEMA_VERSION = 13;
 const DEFAULT_TERM = defaultAcademicTerm();
 const weekdays = [
   { value: 1, short: "月", label: "月曜日" },
@@ -325,6 +330,7 @@ export default function HomePage() {
   const [terms, setTerms] = useState<string[]>([DEFAULT_TERM]);
   const [tutorialSeen, setTutorialSeen] = useState(false);
   const [campus, setCampus] = useState<CampusState>(EMPTY_CAMPUS_STATE);
+  const [inbox, setInbox] = useState<InformationInbox>(EMPTY_INFORMATION_INBOX);
   const [displayPreferences, setDisplayPreferences] = useState<DisplayPreferences>(DEFAULT_DISPLAY_PREFERENCES);
   const [accountCampusEntitlement, setAccountCampusEntitlement] = useState<boolean | null>(null);
   const [firebaseEnabled, setFirebaseEnabled] = useState<boolean | null>(null);
@@ -413,6 +419,7 @@ export default function HomePage() {
     setTerms(safeState.terms);
     setTutorialSeen(safeState.tutorialSeen);
     setCampus(safeState.campus);
+    setInbox(safeState.inbox);
     setDisplayPreferences(safeState.displayPreferences);
     setActiveTerm(safeState.activeTerm);
     const firstCourseId = safeState.courses.find((course) => !course.archivedAt && !course.deletedAt)?.id ?? safeState.courses.find((course) => !course.deletedAt)?.id ?? "";
@@ -506,7 +513,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!hydrated || !autoSaveEnabled) return;
-    const state: SavedState = { courses, sessions, memos, globalTags, courseTags, courseTemplates, terms, activeTerm, tutorialSeen, campus, displayPreferences };
+    const state: SavedState = { courses, sessions, memos, globalTags, courseTags, courseTemplates, terms, activeTerm, tutorialSeen, campus, inbox, displayPreferences };
     latestStateRef.current = state;
     const fingerprint = stateFingerprint(state);
     if (fingerprint === lastPersistedFingerprint.current) return;
@@ -536,7 +543,7 @@ export default function HomePage() {
       });
     }, 520);
     return () => window.clearTimeout(saveTimer);
-  }, [activeTerm, autoSaveEnabled, campus, courseTags, courseTemplates, courses, displayPreferences, globalTags, hydrated, memos, sessions, terms, tutorialSeen]);
+  }, [activeTerm, autoSaveEnabled, campus, inbox, courseTags, courseTemplates, courses, displayPreferences, globalTags, hydrated, memos, sessions, terms, tutorialSeen]);
 
   useEffect(() => {
     if (typeof BroadcastChannel === "undefined") return;
@@ -1049,7 +1056,7 @@ export default function HomePage() {
   }
 
   function currentSavedState(): SavedState {
-    return { ...latestStateRef.current, courses, sessions, memos, globalTags, courseTags, courseTemplates, terms, activeTerm, tutorialSeen, campus, displayPreferences };
+    return { ...latestStateRef.current, courses, sessions, memos, globalTags, courseTags, courseTemplates, terms, activeTerm, tutorialSeen, campus, inbox, displayPreferences };
   }
 
   const handleCampusEntitlement = useCallback((enabled: boolean | null) => {
@@ -1511,6 +1518,9 @@ export default function HomePage() {
             <ListFilter size={19} />
             <span>ノートを見返す</span>
           </button>
+          <button className={view === "inbox" ? "active" : ""} onClick={() => setView("inbox")}>
+            <CalendarDays size={19} /><span>大学情報Inbox</span>
+          </button>
           {campusVisible && <button className={view === "campus" ? "active campus-nav-button" : "campus-nav-button"} onClick={() => setView("campus")}>
             <GraduationCap size={19} />
             <span>大学生活<small>学びも遊びも</small></span>
@@ -1574,6 +1584,7 @@ export default function HomePage() {
         )}
 
         <main className={view === "workspace" ? "workspace-main" : ""}>
+          {view === "inbox" && <UniversityInbox inbox={inbox} disabled={!autoSaveEnabled || Boolean(loadError) || saveStatus === "loading" || saveStatus === "conflict" || saveStatus === "error"} onChange={setInbox} />}
           {view === "start" && (
             <StartView
               courses={activeCourses}
@@ -1754,12 +1765,15 @@ export default function HomePage() {
       </div>
 
       {view !== "workspace" && (
-        <nav className={`mobile-nav${campusVisible ? " has-campus" : ""}`} aria-label="モバイルメニュー">
+        <nav className={`mobile-nav has-inbox${campusVisible ? " has-campus" : ""}`} aria-label="モバイルメニュー">
           <button className={view === "start" || view === "course" ? "active" : ""} onClick={returnToStart}>
             <CalendarDays size={20} /><span>時間割</span>
           </button>
           <button className={view === "review" ? "active" : ""} onClick={() => setView("review")}>
             <ListFilter size={20} /><span>見返す</span>
+          </button>
+          <button className={view === "inbox" ? "active" : ""} onClick={() => setView("inbox")}>
+            <CalendarDays size={20} /><span>大学情報</span>
           </button>
           {campusVisible && <button className={view === "campus" ? "active" : ""} onClick={() => setView("campus")}>
             <GraduationCap size={20} /><span>大学生活</span>
@@ -2476,7 +2490,7 @@ function SessionEditDialog({ session, sessions, onClose, onSave }: { session: Se
 }
 
 function ImportPreviewDialog({ pending, mode, setMode, importing, onClose, onApply }: { pending: PendingImport; mode: "merge" | "replace"; setMode: (mode: "merge" | "replace") => void; importing: boolean; onClose: () => void; onApply: () => void }) {
-  return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><section className="course-dialog import-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="import-title" onMouseDown={(event) => event.stopPropagation()}><div className="dialog-heading"><div><p className="eyebrow">RESTORE</p><h2 id="import-title">読み込む内容を確認</h2><span>ファイルを選んだだけでは、現在のデータは変わりません。</span></div><button className="dialog-close" type="button" onClick={onClose} aria-label="閉じる"><X size={19} /></button></div><div className="import-file-card"><History size={22} /><span><strong>{pending.fileName}</strong><small>{pending.manifest.exportedAt ? formatDateTime(pending.manifest.exportedAt) : "旧形式"}・{formatBytes(pending.bytes)}</small></span></div><dl className="import-counts"><div><dt>講義</dt><dd>{pending.normalized.courses.length}</dd></div><div><dt>授業回</dt><dd>{pending.normalized.sessions.length}</dd></div><div><dt>付箋</dt><dd>{pending.normalized.memos.length}</dd></div><div><dt>提出物</dt><dd>{pending.normalized.campus.assignments.length}</dd></div><div><dt>試験</dt><dd>{pending.normalized.campus.exams.length}</dd></div><div><dt>PDF</dt><dd>{pending.pdfs.length}</dd></div></dl>{pending.legacy && <p className="import-warning"><AlertTriangle size={16} /> 旧形式にはPDF本体が含まれません。PDFは必要な授業回へ再追加してください。</p>}<fieldset className="import-modes"><legend>読み込み方法</legend><label><input type="radio" checked={mode === "merge"} onChange={() => setMode("merge")} /><span><strong>現在のデータに追加（推奨）</strong><small>同じIDは別の講義・授業回として安全に追加します。</small></span></label><label><input type="radio" checked={mode === "replace"} onChange={() => setMode("replace")} /><span><strong>現在のデータを置き換える</strong><small>実行前に現在の完全バックアップを自動で書き出します。</small></span></label></fieldset><div className="import-preview-actions"><button type="button" className="secondary-action" onClick={onClose} disabled={importing}>キャンセル</button><button type="button" className="registration-submit" onClick={onApply} disabled={importing}>{importing ? <LoaderCircle className="spin" size={16} /> : <Upload size={16} />}{importing ? "読み込み中" : "この内容を読み込む"}</button></div></section></div>;
+  return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><section className="course-dialog import-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="import-title" onMouseDown={(event) => event.stopPropagation()}><div className="dialog-heading"><div><p className="eyebrow">RESTORE</p><h2 id="import-title">読み込む内容を確認</h2><span>ファイルを選んだだけでは、現在のデータは変わりません。</span></div><button className="dialog-close" type="button" onClick={onClose} aria-label="閉じる"><X size={19} /></button></div><div className="import-file-card"><History size={22} /><span><strong>{pending.fileName}</strong><small>{pending.manifest.exportedAt ? formatDateTime(pending.manifest.exportedAt) : "旧形式"}・{formatBytes(pending.bytes)}</small></span></div><dl className="import-counts"><div><dt>講義</dt><dd>{pending.normalized.courses.length}</dd></div><div><dt>授業回</dt><dd>{pending.normalized.sessions.length}</dd></div><div><dt>付箋</dt><dd>{pending.normalized.memos.length}</dd></div><div><dt>提出物</dt><dd>{pending.normalized.campus.assignments.length}</dd></div><div><dt>試験</dt><dd>{pending.normalized.campus.exams.length}</dd></div><div><dt>大学情報</dt><dd>{pending.normalized.inbox.records.length}</dd></div><div><dt>PDF</dt><dd>{pending.pdfs.length}</dd></div></dl>{pending.legacy && <p className="import-warning"><AlertTriangle size={16} /> 旧形式にはPDF本体が含まれません。PDFは必要な授業回へ再追加してください。</p>}<fieldset className="import-modes"><legend>読み込み方法</legend><label><input type="radio" checked={mode === "merge"} onChange={() => setMode("merge")} /><span><strong>現在のデータに追加（推奨）</strong><small>同じIDは別の講義・授業回として安全に追加します。</small></span></label><label><input type="radio" checked={mode === "replace"} onChange={() => setMode("replace")} /><span><strong>現在のデータを置き換える</strong><small>実行前に現在の完全バックアップを自動で書き出します。</small></span></label></fieldset><div className="import-preview-actions"><button type="button" className="secondary-action" onClick={onClose} disabled={importing}>キャンセル</button><button type="button" className="registration-submit" onClick={onApply} disabled={importing}>{importing ? <LoaderCircle className="spin" size={16} /> : <Upload size={16} />}{importing ? "読み込み中" : "この内容を読み込む"}</button></div></section></div>;
 }
 
 function TermDialog({
@@ -2619,7 +2633,7 @@ function FeedbackDialog({ view, onClose }: { view: View; onClose: () => void }) 
           message,
           replyEmail,
           website,
-          sourceView: view === "workspace" ? "ノート" : view === "review" ? "見返し" : view === "campus" ? "Campus Muster" : view === "settings" ? "設定" : "時間割",
+          sourceView: view === "workspace" ? "ノート" : view === "review" ? "見返し" : view === "campus" ? "Campus Muster" : view === "inbox" ? "大学情報Inbox" : view === "settings" ? "設定" : "時間割",
           deviceId: getFeedbackDeviceId(),
         }),
       });
@@ -4159,6 +4173,7 @@ function normalizeSavedState(value: SavedState) {
       : Array.from(coursesById.values())[0]?.term || DEFAULT_TERM,
     tutorialSeen: typeof value.tutorialSeen === "boolean" ? value.tutorialSeen : rawCourses.length > 0,
     campus: normalizeCampusState(value.campus),
+    inbox: normalizeInformationInbox(value.inbox),
     displayPreferences: normalizeDisplayPreferences(value.displayPreferences),
   };
 }
@@ -4423,7 +4438,8 @@ function hasMeaningfulState(state: SavedState) {
     || campus.attendanceRecords.length
     || campus.studyTasks.length
     || campus.gpaProfile.plans.length
-    || campus.degreePlan.categories.length,
+    || campus.degreePlan.categories.length
+    || state.inbox?.records.length,
   );
 }
 

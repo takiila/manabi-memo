@@ -1,4 +1,6 @@
 import type { CampusGpaProfile, CampusGradePlan, CampusState } from "./campus-model";
+import { mergeInformationInboxes } from "./manabi-import-model.ts";
+import type { InformationInbox } from "./manabi-import-types";
 
 /**
  * The main page owns the concrete notebook record types.  Keeping the merge
@@ -38,6 +40,7 @@ type MergeState<TCourse extends MergeCourse, TSession extends MergeSession, TMem
   activeTerm: string;
   tutorialSeen: boolean;
   campus: CampusState;
+  inbox?: InformationInbox;
   displayPreferences: unknown;
 };
 
@@ -136,6 +139,7 @@ export function mergeImportedState<
       activeTerm: existing.activeTerm,
       tutorialSeen: existing.tutorialSeen,
       campus: mergeCampusImported(existing.campus, incoming.campus, courseIds.firstIds),
+      inbox: mergeInformationInboxes(existing.inbox, incoming.inbox),
       displayPreferences: existing.displayPreferences,
     } as TState,
     pdfs: pdfs.map((entry) => ({ ...entry, id: sessionMap.get(entry.id) ?? entry.id })),

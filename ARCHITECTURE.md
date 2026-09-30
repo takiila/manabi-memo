@@ -8,6 +8,7 @@
 | `/` 大学生活プラン / Campus Muster | `app/campus-module.tsx` | 任意表示の学業・遊びの統合管理 |
 | `/` 共有カレンダー | `app/shared-campus-calendar.tsx` | 許可メンバーの課題・確認事項・遊び候補と本人別の完了・参加可否 |
 | `/` アカウント・同期 | `app/account-sync.tsx` | Firebase、初回同期、競合、PDF同期 |
+| `/` 大学情報Inbox | `app/university-inbox.tsx` | AI変換JSONの解析・確認・確定、出典付き情報、配属日程、変更履歴 |
 | `/terms` | `app/terms/page.tsx` | 利用規約 |
 | `/privacy` | `app/privacy/page.tsx` | プライバシーポリシー |
 | `/feedback-admin` | `app/feedback-admin/page.tsx` | Firebase管理者の受信一覧 |
@@ -20,6 +21,7 @@
 | SessionRecord | `courseId`, 本文、PDF情報、抽出本文、任意の軽量参照情報 | IndexedDB、同期state |
 | Memo | `sessionId`, `courseId`, タグ、位置、ピン、復習 | IndexedDB、同期state |
 | CampusState | 授業、提出物、試験、出席、学習タスク、GPA等 | IndexedDB、同期state |
+| InformationInbox | 内部UUID、collection、検証済みImportItem、既読、日時、履歴 | IndexedDB、同期state、完全バックアップ |
 | SharedCalendar | 種類、学期、科目/場所、期限、共有メモ、メンバー別の完了/参加可否 | サーバーDB、利用者別localStorageキャッシュ |
 | PDF本体 | Session ID、SHA-256、ノート版 | IndexedDB、Cloudflare R2 / Private Vercel Blob / ローカルファイル |
 | 同期メタデータ | Account ID、revision、fingerprint、device ID | localStorage、サーバーDB |
@@ -39,6 +41,8 @@ PDF軽量参照は利用者の明示操作でだけ作成します。PDF本体�
 共有カレンダーは個人の同期stateとは別領域です。`ALLOWED_ACCOUNT_EMAILS` の2人以上だけが同じ予定を読み書きでき、回答行はFirebaseで認証した本人のメールに固定します。課題・確認事項では完了、遊び候補では参加可否として同じ安全な回答行を使います。共有画面へ明示登録していない個人予定は送信しません。予定の更新は `updatedAt` を使った楽観的ロックで競合を止め、削除は30日間のごみ箱を経て完全削除します。端末キャッシュはオフライン表示専用で、オフライン変更は受け付けません。
 
 現在のクラウドstateは互換性を優先したbundle単位です。将来entity単位へ移す場合も、schemaVersionと参照IDを保つ移行処理が必要です。
+
+内部state版13はoptionalなinboxを追加します。旧stateは空Inboxへ正規化し、不正Inboxは非破壊で読み込みを停止します。外部Manabi Import Schema版1.0とは独立して管理します。JSON Schemaが公開契約と実行時検証の共通仕様で、`app/manabi-import-model.ts`が解析、意味検証、差分計画、確認後確定、復元mergeを担当します。Inbox単独でも初回同期のデータあり判定に含めます。AI SDK・APIやMCPは保存モデルに組み込まず、将来のアダプターでも同じ確認境界を維持します。詳細は [Import Schema仕様](docs/import-schema.md) を参照してください。
 
 ## 実行環境
 
