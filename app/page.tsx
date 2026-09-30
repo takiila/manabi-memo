@@ -4486,7 +4486,8 @@ function hasMeaningfulState(state: SavedState) {
     || campus.studyTasks.length
     || campus.gpaProfile.plans.length
     || campus.degreePlan.categories.length
-    || state.inbox?.records.length,
+    || state.inbox?.records.length
+    || state.inbox?.catalogProfile,
   );
 }
 

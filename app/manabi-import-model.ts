@@ -2,6 +2,7 @@ import { Ajv2020 } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import schema from '../schema/manabi-memo.schema.json' with { type: 'json' };
 import type { ImportItem, ImportItemType, ImportPlanRow, InformationInbox, ManabiImport } from './manabi-import-types';
+import { normalizeCatalogProfile } from './course-catalog-model.ts';
 
 export const MAX_IMPORT_BYTES = 1024 * 1024;
 export const EMPTY_INFORMATION_INBOX: InformationInbox = { version: 1, records: [] };
@@ -139,11 +140,12 @@ export function normalizeInformationInbox(value: unknown): InformationInbox {
     });
     return { id: record.id, collection: record.collection, item, status: record.status, importedAt: record.importedAt, updatedAt: record.updatedAt, history };
   });
-  return { version: 1, records };
+  return { version: 1, records, ...(inbox.catalogProfile === undefined ? {} : { catalogProfile: normalizeCatalogProfile(inbox.catalogProfile) }) };
 }
 
 export function mergeInformationInboxes(existingValue: unknown, incomingValue: unknown): InformationInbox {
   const existing = normalizeInformationInbox(existingValue), incoming = normalizeInformationInbox(incomingValue);
+  if (!existing.catalogProfile && incoming.catalogProfile) existing.catalogProfile = incoming.catalogProfile;
   for (const record of incoming.records) {
     if (existing.records.some(entry => identity(entry.collection, entry.item) === identity(record.collection, record.item) && canonical(entry.item) === canonical(record.item) && canonical(entry.history) === canonical(record.history))) continue;
     const id = existing.records.some(entry => entry.id === record.id) ? crypto.randomUUID() : record.id;

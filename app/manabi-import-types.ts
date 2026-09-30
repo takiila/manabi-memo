@@ -45,5 +45,6 @@ export type InformationRecord = {
   updatedAt: string;
   history: { item: ImportItem; replacedAt: string }[];
 };
-export type InformationInbox = { version: 1; records: InformationRecord[] };
+export type CatalogProfile = { university: string; faculty: string; academicYear: number; semester: string; syllabusUrl: string };
+export type InformationInbox = { version: 1; records: InformationRecord[]; catalogProfile?: CatalogProfile };
 export type ImportPlanRow = { item: ImportItem; kind: 'add' | 'update' | 'same' | 'blocked'; existing?: InformationRecord; warnings: string[] };

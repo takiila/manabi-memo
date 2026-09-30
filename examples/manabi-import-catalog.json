@@ -1,0 +1,77 @@
+{
+  "schema_version": "1.0",
+  "collection": "fictional-university-information-2026-autumn",
+  "items": [
+    {
+      "id": "cat101-2026-autumn",
+      "type": "course",
+      "title": "サンプル情報設計（架空）",
+      "term": "2026年度 後期",
+      "summary": "架空大学情報学部の履修候補。CAT102と同じ月曜第2枠の代替候補。履修登録は未確定。この例は確認範囲の部分集合で、全授業を表さない。",
+      "source": {
+        "kind": "syllabus",
+        "title": "架空大学情報学部 2026年度後期 公式シラバス（架空資料）",
+        "locator": "2ページ CAT101 開講情報",
+        "excerpt": "CAT101 サンプル情報設計 2026年度後期 月曜 10:20〜11:50 架空教員A 2単位 A201"
+      },
+      "data": {
+        "code": "CAT101",
+        "term": "2026年度 後期",
+        "instructor": "架空教員A",
+        "credits": 2,
+        "weekday": 1,
+        "period": 2,
+        "room": "A201"
+      }
+    },
+    {
+      "id": "cat102-2026-autumn",
+      "type": "course",
+      "title": "サンプルデータ表現（架空）",
+      "term": "2026年度 後期",
+      "summary": "架空大学情報学部の履修候補。CAT101と同じ月曜第2枠の代替候補。カタログには両方保存し、履修登録は利用者が選択・確認する。",
+      "source": {
+        "kind": "syllabus",
+        "title": "架空大学情報学部 2026年度後期 公式シラバス（架空資料）",
+        "locator": "3ページ CAT102 開講情報",
+        "excerpt": "CAT102 サンプルデータ表現 2026年度後期 月曜 10:20〜11:50 架空教員B 2単位 B202"
+      },
+      "data": {
+        "code": "CAT102",
+        "term": "2026年度 後期",
+        "instructor": "架空教員B",
+        "credits": 2,
+        "weekday": 1,
+        "period": 2,
+        "room": "B202"
+      }
+    },
+    {
+      "id": "cat103-2026-autumn",
+      "type": "course",
+      "title": "サンプル研究演習（架空）",
+      "term": "2026年度 後期",
+      "summary": "架空大学情報学部の履修候補。原資料の年度学期は確認できるが、曜日・時限・教室は未定。時間割不明の候補として保持する。",
+      "source": {
+        "kind": "syllabus",
+        "title": "架空大学情報学部 2026年度後期 公式シラバス（架空資料）",
+        "locator": "4ページ CAT103 開講情報",
+        "excerpt": "CAT103 サンプル研究演習 2026年度後期 架空教員C 2単位 曜日・時限・教室は未定"
+      },
+      "data": {
+        "code": "CAT103",
+        "term": "2026年度 後期",
+        "instructor": "架空教員C",
+        "credits": 2,
+        "weekday": null,
+        "period": null,
+        "room": null
+      },
+      "needs_review": true,
+      "uncertainties": [
+        "曜日・時限・教室は原資料で未定。時間割への配置は未確定。",
+        "履修登録前に利用者が開講情報と履修可否を確認する必要がある。"
+      ]
+    }
+  ]
+}
