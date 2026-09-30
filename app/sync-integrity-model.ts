@@ -21,7 +21,7 @@ export function expectedPdfVersions(state: unknown) {
   return Object.fromEntries(state.sessions.flatMap((session) => {
     if (!session || typeof session !== "object") return [];
     const value = session as Record<string, unknown>;
-    if (typeof value.id !== "string" || value.hasPdf !== true) return [];
+    if (typeof value.id !== "string" || value.hasPdf !== true || value.pdfSyncMode === 'local-only') return [];
     const version = [
       value.id,
       typeof value.updatedAt === "string" ? value.updatedAt : "",

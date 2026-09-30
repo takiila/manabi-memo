@@ -1,5 +1,9 @@
 "use client";
 
+import PdfSyncControl from './pdf-sync-control';
+import DevicePdfRecovery from './device-pdf-recovery';
+import { archiveDevicePdfs, normalizePdfSyncFields, retainDevicePdfs, type PdfSyncMode } from './pdf-sync-model';
+
 import { CourseTransferPanel } from "./course-transfer-panel";
 import { applyCourseImport, planCourseImport, type CourseInfo } from "./course-transfer";
 
@@ -156,6 +160,8 @@ type SessionRecord = {
   needsOcr: boolean;
   pdfWarnings?: string[];
   hasPdf: boolean;
+  pdfSyncMode?: PdfSyncMode;
+  pdfSha256?: string;
   pdfReferenceOnly?: boolean;
   pdfReferenceSha256?: string;
   pdfReleasedAt?: string | null;
@@ -284,7 +290,7 @@ const PREVIOUS_STATE_KEYS = [
   "manabi-memo-state-v2",
 ];
 const LEGACY_STATE_KEY = "manabi-memo-state-v1";
-const CURRENT_SCHEMA_VERSION = 12;
+const CURRENT_SCHEMA_VERSION = 13;
 const DEFAULT_TERM = defaultAcademicTerm();
 const weekdays = [
   { value: 1, short: "月", label: "月曜日" },
@@ -393,7 +399,7 @@ export default function HomePage() {
   const latestStateRef = useRef<SavedState>({});
   const storageChannel = useRef<BroadcastChannel | null>(null);
 
-  function applyNormalizedState(normalized: NormalizedState) {
+  function applyNormalizedState(normalized: NormalizedState, preservedCourseId = '') {
     const expiredCourseIds = new Set(normalized.courses.filter((course) => isTrashExpired(course)).map((course) => course.id));
     const expiredSessionIds = new Set(normalized.sessions.filter((session) => isTrashExpired(session) || expiredCourseIds.has(session.courseId)).map((session) => session.id));
     const expiredPdfIds = normalized.sessions.filter((session) => expiredSessionIds.has(session.id)).map((session) => session.id);
@@ -416,8 +422,10 @@ export default function HomePage() {
     setDisplayPreferences(safeState.displayPreferences);
     setActiveTerm(safeState.activeTerm);
     const firstCourseId = safeState.courses.find((course) => !course.archivedAt && !course.deletedAt)?.id ?? safeState.courses.find((course) => !course.deletedAt)?.id ?? "";
-    setSelectedCourseId(firstCourseId);
-    setSelectedSession(firstCourseId ? nextSessionNumber(firstCourseId, safeState.sessions) : "1");
+    if (!preservedCourseId || !safeState.courses.some(course => course.id === preservedCourseId && !course.deletedAt)) {
+      setSelectedCourseId(firstCourseId);
+      setSelectedSession(firstCourseId ? nextSessionNumber(firstCourseId, safeState.sessions) : "1");
+    }
   }
 
   useEffect(() => {
@@ -909,7 +917,8 @@ export default function HomePage() {
     if (session.hasPdf && !knownBlob) {
       try {
         const stored = await loadPdfFromDevice(session.id);
-        if (pdfLoadRequest.current === requestId) setPdfBlob(stored);
+        const matches = stored && (!session.pdfSha256 || await sha256Blob(stored) === session.pdfSha256);
+        if (pdfLoadRequest.current === requestId) setPdfBlob(matches ? stored : null);
       } catch {
         if (pdfLoadRequest.current === requestId) setPdfBlob(null);
       }
@@ -952,6 +961,8 @@ export default function HomePage() {
           needsOcr: processed.needsOcr,
           pdfWarnings: processed.warnings,
           hasPdf: true,
+          pdfSyncMode: existingSelection ? existingSelection.pdfSyncMode ?? 'cloud' : 'local-only',
+          pdfSha256: await sha256Blob(draftPdf),
           ...fullPdfPatch(),
           lastPdfPage: existingSelection?.lastPdfPage ?? 1,
           noteText: existingSelection?.noteText ?? courseTemplates[selectedCourse.id] ?? "",
@@ -1012,6 +1023,11 @@ export default function HomePage() {
       const latestSessions = (latestStateRef.current.sessions ?? sessions) as SessionRecord[];
       const currentSession = latestSessions.find((session) => session.id === activeSession.id) ?? activeSession;
       const candidateSha256 = await sha256Blob(file);
+      if (currentSession.pdfSyncMode === 'local-only' && currentSession.pdfSha256 && currentSession.pdfSha256 !== candidateSha256
+        && !window.confirm('登録済みのPDFと内容が異なります。資料情報を差し替えますか？')) {
+        setPdfStatus({ message: '', progress: 0, error: 'PDFの差し替えをキャンセルしました。' });
+        return;
+      }
       if (currentSession.pdfReferenceOnly && !isMatchingPdfReference(currentSession, { sha256: candidateSha256, fileName: file.name, pageCount: processed.pageCount })) {
         const proceed = window.confirm("以前参照していたPDFと一致しません。付箋のページ参照がずれる可能性があります。このPDFへ差し替えますか？");
         if (!proceed) {
@@ -1031,6 +1047,8 @@ export default function HomePage() {
         needsOcr: processed.needsOcr,
         pdfWarnings: processed.warnings,
         hasPdf: true,
+        pdfSyncMode: currentSession.hasPdf ? currentSession.pdfSyncMode ?? 'cloud' : 'local-only',
+        pdfSha256: candidateSha256,
         ...fullPdfPatch(),
         lastPdfPage: 1,
         updatedAt: new Date().toISOString(),
@@ -1069,7 +1087,7 @@ export default function HomePage() {
     setFirebaseEnabled(enabled);
   }, []);
 
-  async function applyCloudAccountState(value: unknown, pdfs: Array<{ id: string; blob: Blob }>) {
+  async function applyCloudAccountState(value: unknown, pdfs: Array<{ id: string; blob: Blob }>, assertUnchanged: () => void, signal: AbortSignal) {
     if (!isSavedStateShape(value)) throw new Error("クラウドの保存形式を確認できませんでした");
     let normalized = normalizeSavedState(value);
     if (accountCampusEntitlement !== null) {
@@ -1082,16 +1100,22 @@ export default function HomePage() {
       };
     }
     const pdfIds = new Set(pdfs.map((entry) => entry.id));
-    const expectedIds = normalized.sessions.filter((session) => session.hasPdf).map((session) => session.id);
+    const expectedIds = normalized.sessions.filter((session) => session.hasPdf && session.pdfSyncMode !== 'local-only').map((session) => session.id);
     if (expectedIds.some((id) => !pdfIds.has(id)) || pdfs.some((entry) => !normalized.sessions.some((session) => session.id === entry.id))) {
       throw new Error("クラウドのノートとPDFの対応を確認できませんでした");
     }
+    const devicePdfs = await loadAllPdfs();
+    const retained = await retainDevicePdfs(normalized.sessions, devicePdfs);
+    const archives = await archiveDevicePdfs(devicePdfs.filter(entry => !retained.some(pdf => pdf.id === entry.id)));
+    assertUnchanged();
     saveEpoch.current += 1;
     await saveChain.current.catch(() => undefined);
-    const saved = await restoreAppStateAndPdfs(normalized, pdfs, true, CURRENT_SCHEMA_VERSION, storageRevision.current, writerId.current);
+    assertUnchanged();
+    const saved = await restoreAppStateAndPdfs(normalized, [...pdfs, ...retained, ...archives], true, CURRENT_SCHEMA_VERSION, storageRevision.current, writerId.current, { assertCurrent: assertUnchanged, signal });
     storageRevision.current = saved.revision;
     lastPersistedFingerprint.current = stateFingerprint(normalized);
-    applyNormalizedState(normalized);
+    applyNormalizedState(normalized, selectedCourseId);
+    if (activeSessionId) setPdfBlob([...pdfs, ...retained].find(entry => entry.id === activeSessionId)?.blob ?? null);
     setLastSavedAt(saved.savedAt);
     setSaveStatus("saved");
     setAutoSaveEnabled(true);
@@ -1113,6 +1137,26 @@ export default function HomePage() {
     setSaveStatus("saved");
     setStorageHealth(await getStorageHealth());
     storageChannel.current?.postMessage({ writerId: writerId.current, revision: saved.revision });
+  }
+
+  async function changePdfSyncMode(sessionId: string, mode: PdfSyncMode) {
+    const target = sessions.find(session => session.id === sessionId);
+    if (!target?.hasPdf || pdfStatus.message) return;
+    try {
+      setPdfStatus({ message: 'PDFの保存方法を確認しています', progress: 0, error: '' });
+      const blob = await loadPdfFromDevice(sessionId);
+      if (!blob) throw new Error('保存方法を変更するには、この端末へ元のPDFを追加してください。');
+      const hash = await sha256Blob(blob);
+      if (target.pdfSha256 && target.pdfSha256 !== hash) throw new Error('登録済みのPDFと一致しません。元のPDFを追加してください。');
+      if (mode === 'local-only' && !window.confirm('PDF本体をクラウド同期の対象から外します。次の同期でクラウド上の本体は削除されます。この端末のPDFと、全端末のノート・課題・ページ参照は残ります。続けますか？')) return;
+      setSessions(current => current.map(session => session.id === sessionId
+        ? { ...session, pdfSyncMode: mode, pdfSha256: hash } : session));
+    } catch (cause) {
+      setPdfStatus({ message: '', progress: 0, error: cause instanceof Error ? cause.message : '変更できませんでした。' });
+      return;
+    } finally {
+      setPdfStatus(current => ({ ...current, message: '', progress: 0 }));
+    }
   }
 
   async function releasePdfToReference(sessionId: string) {
@@ -1280,11 +1324,11 @@ export default function HomePage() {
       const sessionIds = new Set(sessions.map((session) => session.id));
       const allPdfs = (await loadAllPdfs()).filter((entry) => sessionIds.has(entry.id));
       const storedIds = new Set(allPdfs.map((entry) => entry.id));
-      const missing = sessions.filter((session) => session.hasPdf && !storedIds.has(session.id));
+      const missing = sessions.filter((session) => session.hasPdf && session.pdfSyncMode !== 'local-only' && !storedIds.has(session.id));
       if (missing.length > 0) throw new Error(`端末に見つからないPDFが${missing.length}件あります。資料を再追加してから書き出してください。`);
       const blob = await createBackupFile(state, allPdfs);
       downloadBlob(blob, `manabi-memo-${new Date().toISOString().slice(0, 10)}.manabimemo`);
-      if (!silent) setImportMessage(`PDF ${allPdfs.length}件を含む完全バックアップを書き出しました`);
+      if (!silent) setImportMessage(`学習データと、この端末にあるPDF ${allPdfs.length}件を書き出しました。ほかの端末だけにあるPDF本体は含まれません。`);
       void recordLocalMetric("backup_completed", { pdfCount: allPdfs.length });
       return true;
     } catch (cause) {
@@ -1302,7 +1346,7 @@ export default function HomePage() {
       if (!isSavedStateShape(inspection.manifest.state)) throw new Error("ノートデータの形式を確認できません");
       let normalized = normalizeSavedState(inspection.manifest.state);
       const storedPdfIds = new Set(inspection.pdfs.map((entry) => entry.id));
-      const expectedPdfIds = new Set(normalized.sessions.filter((session) => session.hasPdf).map((session) => session.id));
+      const expectedPdfIds = new Set(normalized.sessions.filter((session) => session.hasPdf && session.pdfSyncMode !== 'local-only').map((session) => session.id));
       const missingIds = [...expectedPdfIds].filter((id) => !storedPdfIds.has(id));
       const extraIds = [...storedPdfIds].filter((id) => !normalized.sessions.some((session) => session.id === id));
       if (!inspection.legacy && (missingIds.length > 0 || extraIds.length > 0)) throw new Error("バックアップ内のノートとPDFの対応が壊れています");
@@ -1534,7 +1578,7 @@ export default function HomePage() {
       <AccountSync
         currentState={currentSavedState()}
         schemaVersion={CURRENT_SCHEMA_VERSION}
-        hydrated={hydrated}
+        hydrated={hydrated && autoSaveEnabled && !loadError && saveStatus !== 'conflict'}
         localHasData={hasMeaningfulState(currentSavedState())}
         onApplyCloud={applyCloudAccountState}
         onCampusEntitlement={handleCampusEntitlement}
@@ -1743,6 +1787,7 @@ export default function HomePage() {
               attachPdf={attachPdf}
               attachPdfFile={attachPdfFile}
               releasePdfToReference={releasePdfToReference}
+              changePdfSyncMode={changePdfSyncMode}
               pdfStatus={pdfStatus}
               initialMemoId={focusedMemoId}
               saveStatus={saveStatus}
@@ -2827,6 +2872,7 @@ function WorkspaceView({
   attachPdf,
   attachPdfFile,
   releasePdfToReference,
+  changePdfSyncMode,
   pdfStatus,
   initialMemoId,
   saveStatus,
@@ -2860,6 +2906,7 @@ function WorkspaceView({
   attachPdf: (event: ChangeEvent<HTMLInputElement>) => void;
   attachPdfFile: (file: File) => Promise<void>;
   releasePdfToReference: (sessionId: string) => Promise<void>;
+  changePdfSyncMode: (sessionId: string, mode: PdfSyncMode) => Promise<void>;
   pdfStatus: { message: string; progress: number; error: string };
   initialMemoId: string | null;
   saveStatus: SaveStatus;
@@ -3207,6 +3254,8 @@ function WorkspaceView({
           </button>
           {session.hasPdf ? (
             <>
+              <PdfSyncControl mode={session.pdfSyncMode ?? 'cloud'} available={Boolean(pdfBlob)} disabled={Boolean(pdfStatus.message)}
+                onChange={mode => void changePdfSyncMode(session.id, mode)} onSelect={attachPdf} />
               <button className={showPdf ? "active" : ""} onClick={() => setShowPdf(!showPdf)}>
                 <FileText size={17} /> {showPdf ? "資料を閉じる" : "資料を開く"}
               </button>
@@ -3860,6 +3909,8 @@ function MemoReviewPanel({
         </div>
       </details>
 
+      <DevicePdfRecovery />
+
       <details className="storage-diagnostics">
         <summary>保存状態を確認</summary>
         <p>ノートとPDFはこの端末に保存されています。クラウド同期の利用中も、ブラウザデータを消す前に完全バックアップを作成してください。</p>
@@ -4072,6 +4123,7 @@ function normalizeSavedState(value: SavedState) {
         ? session.pdfWarnings.filter((warning): warning is string => typeof warning === "string").slice(0, 8)
         : [],
       hasPdf,
+      ...normalizePdfSyncFields(session),
       ...pdfReference,
       lastPdfPage: typeof session.lastPdfPage === "number"
         ? clampNumber(Math.round(session.lastPdfPage), 1, Math.max(1, pageCount))

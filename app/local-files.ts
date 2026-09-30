@@ -34,6 +34,8 @@ type CommitOptions = {
   schemaVersion?: number;
   expectedRevision?: number;
   writerId?: string;
+  assertCurrent?: () => void;
+  signal?: AbortSignal;
 };
 
 export async function savePdfToDevice(id: string, file: Blob) {
@@ -164,11 +166,12 @@ export async function restoreAppStateAndPdfs<T>(
   schemaVersion = 8,
   expectedRevision?: number,
   writerId?: string,
+  guard: Pick<CommitOptions, 'assertCurrent' | 'signal'> = {},
 ): Promise<StoredAppState<T>> {
   return commitAppState(
     data,
     { putPdfs: entries, clearPdfs: replace },
-    { schemaVersion, expectedRevision, writerId },
+    { schemaVersion, expectedRevision, writerId, ...guard },
   );
 }
 
@@ -254,12 +257,29 @@ async function commitAppState<T>(
 ): Promise<StoredAppState<T>> {
   validatePdfEntries(changes.putPdfs ?? []);
   const database = await openDatabase();
+  let removeAbortListener = () => {};
   try {
+    options.signal?.throwIfAborted();
+    options.assertCurrent?.();
     const usesPdfs = Boolean(changes.clearPdfs || changes.putPdfs?.length || changes.deletePdfIds?.length);
     const transaction = database.transaction(usesPdfs ? [STATE_STORE, PDF_STORE] : STATE_STORE, "readwrite");
     const done = transactionDone(transaction);
+    const abort = () => { try { transaction.abort(); } catch { /* already completed */ } };
+    options.signal?.addEventListener('abort', abort, { once: true });
+    removeAbortListener = () => options.signal?.removeEventListener('abort', abort);
+    // Attach rejection handling immediately; cancellation may occur during the initial read.
+    void done.catch(() => undefined);
     const stateStore = transaction.objectStore(STATE_STORE);
-    const previous = await requestAsPromise<StoredAppState<T> | undefined>(stateStore.get(CURRENT_STATE_KEY));
+    let previous: StoredAppState<T> | undefined;
+    try {
+      previous = await requestAsPromise<StoredAppState<T> | undefined>(stateStore.get(CURRENT_STATE_KEY));
+      options.signal?.throwIfAborted();
+      options.assertCurrent?.();
+    } catch (cause) {
+      abort();
+      await ignoreRejection(done);
+      throw options.signal?.aborted ? options.signal.reason : cause;
+    }
     if (
       typeof options.expectedRevision === "number"
       && (previous?.revision ?? 0) !== options.expectedRevision
@@ -283,9 +303,11 @@ async function commitAppState<T>(
       for (const entry of changes.putPdfs ?? []) pdfStore.put(entry.blob, entry.id);
     }
     stateStore.put(record, CURRENT_STATE_KEY);
-    await done;
+    try { await done; }
+    catch (cause) { throw options.signal?.aborted ? options.signal.reason : cause; }
     return record;
   } finally {
+    removeAbortListener();
     database.close();
   }
 }

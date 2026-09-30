@@ -16,12 +16,13 @@ export default function OfflineReady() {
       if (reloadForUpdate.current) window.location.reload();
     };
     const checkForUpdate = () => {
-      if (document.visibilityState === "visible") void registration?.update();
+      if (document.visibilityState === "visible") void registration?.update().catch(() => undefined);
     };
     navigator.serviceWorker.addEventListener("controllerchange", controllerChanged);
     document.addEventListener("visibilitychange", checkForUpdate);
     const timer = window.setInterval(checkForUpdate, 60 * 60 * 1000);
     void navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).then((value) => {
+      if (!value) return;
       registration = value;
       showWaitingWorker();
       registration.addEventListener("updatefound", () => {
@@ -30,8 +31,8 @@ export default function OfflineReady() {
           if (installing.state === "installed") showWaitingWorker();
         });
       });
-      void registration.update();
-    });
+      void registration.update().catch(() => undefined);
+    }).catch(() => undefined);
     return () => {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", checkForUpdate);

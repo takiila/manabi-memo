@@ -20,9 +20,8 @@ export function decideSyncPlan(input: {
 }): SyncPlan {
   if (input.meta && input.accountId && input.meta.accountId !== input.accountId) return "account-mismatch";
   if (!input.cloudExists) return "upload";
-  if (!input.localHasData) return "download";
   if (input.localFingerprint === input.cloudFingerprint) return "synced";
-  if (!input.meta || !input.meta.enabled) return "choice";
+  if (!input.meta || !input.meta.enabled || !input.meta.fingerprint) return input.localHasData ? "choice" : "download";
   if (input.cloudRevision === input.meta.revision) {
     return input.localFingerprint === input.meta.fingerprint ? "synced" : "upload";
   }

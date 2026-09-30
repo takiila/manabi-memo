@@ -58,3 +58,8 @@ test("同じアカウントの同期メタデータは従来どおり利用で�
     accountId: "account-1",
   }), "download");
 });
+
+test('clearing the last local record is an edit, not an empty new device', () => {
+  assert.equal(decideSyncPlan({localHasData:false,cloudExists:true,localFingerprint:'empty',cloudFingerprint:'old',cloudRevision:4,meta:meta(4,'old')}), 'upload');
+  assert.equal(decideSyncPlan({localHasData:false,cloudExists:true,localFingerprint:'empty',cloudFingerprint:'remote-new',cloudRevision:5,meta:meta(4,'old')}), 'conflict');
+});

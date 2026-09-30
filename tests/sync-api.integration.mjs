@@ -397,7 +397,39 @@ try {
   const deletionMarker = await jsonRequest(`${origin}/api/sync/state`, { headers: owner });
   assert.equal(deletionMarker.body.deleted, true);
 
-  process.stdout.write("sync API integration: 3 users x PC/phone, shared study/play responses and trash, Campus/CMTR graduation data, PDF integrity, conflict cleanup, account isolation, deletion passed\n");
+  // One person, three devices. None of the other devices has the PDF bytes.
+  const desktopState = stateFor('desktop-local-pdf');
+  desktopState.sessions[0].pdfSyncMode = 'local-only';
+  desktopState.sessions[0].pdfSha256 = 'a'.repeat(64);
+  desktopState.sessions[0].noteText = 'desktop note';
+  desktopState.campus.assignments[0].dueISO = '2026-10-05T17:00:00+09:00';
+  desktopState.campus.assignments[0].status = 'todo';
+  let deviceRevision = deletionMarker.body.revision;
+  await commitState(origin, owner, deviceRevision++, desktopState, 'device-desktop');
+  const laptop = await jsonRequest(`${origin}/api/sync/state`, {headers:owner});
+  assert.deepEqual(laptop.body.state, desktopState);
+  assert.deepEqual(laptop.body.pdfs, []);
+  assert.equal(laptop.body.incomplete ?? false, false);
+  const laptopState = structuredClone(laptop.body.state);
+  laptopState.campus.assignments[0].dueISO = '2026-10-06T17:00:00+09:00';
+  laptopState.sessions[0].noteText = 'laptop note';
+  await commitState(origin, owner, deviceRevision++, laptopState, 'device-laptop');
+  const phone = await jsonRequest(`${origin}/api/sync/state`, {headers:owner});
+  assert.deepEqual(phone.body.state, laptopState);
+  const phoneState = structuredClone(phone.body.state);
+  phoneState.campus.assignments[0].status = 'done';
+  await commitState(origin, owner, deviceRevision++, phoneState, 'device-phone');
+  const desktopAgain = await jsonRequest(`${origin}/api/sync/state`, {headers:owner});
+  assert.deepEqual(desktopAgain.body.state, phoneState);
+  assert.equal(desktopAgain.body.state.sessions[0].fileName, desktopState.sessions[0].fileName);
+  const staleLaptop = await jsonRequest(`${origin}/api/sync/state`, {
+    method:'POST', headers:owner, body:JSON.stringify(syncBody(deviceRevision - 1, laptopState, [], 'stale-laptop')),
+  });
+  assert.equal(staleLaptop.response.status, 409);
+  const otherAfterLocalOnly = await jsonRequest(`${origin}/api/sync/state`, {headers:other});
+  assertAccountState(otherAfterLocalOnly.body, 'other', 'phone-v2', 56, 2);
+
+  process.stdout.write("sync API integration: 3 users x PC/phone; same-account desktop/laptop/phone with device-only PDF, deadlines, completion, notes and conflicts; shared calendar, PDF integrity, isolation and deletion passed\n");
 } finally {
   server.kill();
   await Promise.race([

@@ -7945,3 +7945,7 @@ textarea:focus-visible,
 .course-transfer-form { display: grid; grid-template-columns: repeat(auto-fit,minmax(210px,1fr)); gap: 12px; }
 .course-import-row { border-top: 1px solid #d6dce5; padding: 14px 0; }
 .course-transfer-actions { display: flex; flex-wrap: wrap; }
+.pdf-sync-control { display: flex; flex-direction: column; gap: 4px; max-width: 100%; font-size: 12px; }
+.pdf-sync-control label { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.pdf-sync-control select { max-width: 100%; padding: 6px; border-radius: 6px; background: var(--surface, white); color: inherit; }
+.pdf-sync-control small { line-height: 1.5; }

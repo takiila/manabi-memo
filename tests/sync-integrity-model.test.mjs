@@ -45,3 +45,13 @@ test("a state without PDFs has an empty committed set", () => {
   assert.equal(isCommittedPdfMetadata({ courses: [], sessions: [], memos: [] }, 1, []), true);
   assert.equal(isCommittedPdfMetadata({ courses: [], sessions: [], memos: [] }, 1, [{ sessionId: "orphan", size: 1, sha256: hash, stateRevision: 1, noteVersion: "orphan" }]), false);
 });
+
+test("device-only PDFs do not block syncing notes or assignment deadlines", () => {
+  const localOnly = { ...state, sessions: [{ ...state.sessions[0], pdfSyncMode: 'local-only', pdfSha256: hash }] };
+  assert.deepEqual(expectedPdfIds(localOnly), []);
+  assert.equal(validatePdfManifest(localOnly, [], []).ok, true);
+  assert.equal(isCommittedPdfMetadata(localOnly, 1, []), true);
+  // Omitted or unrecognized policy must keep legacy cloud integrity checks.
+  assert.equal(validatePdfManifest(state, [], []).ok, false);
+  assert.equal(validatePdfManifest({...localOnly, sessions: [{...localOnly.sessions[0], pdfSyncMode:'invalid'}]}, [], []).ok, false);
+});
