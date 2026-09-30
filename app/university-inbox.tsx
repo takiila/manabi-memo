@@ -11,21 +11,18 @@ import type { TransferCourse } from './course-transfer';
 import { courseEntryKey, courseSelectionConflict, planInboxCourses, type CourseEntry } from './inbox-course-model';
 import { InboxCoursePreview } from './inbox-course-preview';
 import { CourseCatalog } from './course-catalog';
+import { registrationEntries, displayImportValue as displayValue } from './import-registration-model';
 
-function displayValue(value: unknown): string {
-  if (value == null || (Array.isArray(value) && !value.length)) return '未確認';
-  if (Array.isArray(value)) return value.join('、');
-  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return `${value}（時刻未確認）`;
-  return String(value);
-}
 
 function ItemDetails({ item, previous }: { item: ImportItem; previous?: ImportItem }) {
-  const next = item.data as Record<string, unknown>, old = previous?.data as Record<string, unknown> | undefined;
+  const next = { ...item.data } as Record<string, unknown>, old = previous ? { ...previous.data } as Record<string, unknown> : undefined;
+  if (item.type === 'course') next.term ??= item.term;
+  if (previous?.type === 'course' && old) old.term ??= previous.term;
   const keys = Array.from(new Set([...Object.keys(next), ...Object.keys(old ?? {})]));
   return <>
     {item.summary && <p>{item.summary}</p>}
     {previous && <p className="inbox-warning">更新を選ぶと、この情報全体をJSONの内容に置き換えます。省略された項目も外れます。変更前の情報は履歴に残ります。</p>}
-    <div className="inbox-table-wrap"><table><caption>{previous ? '変更前と取り込む情報' : '取り込む情報'}</caption><thead><tr><th>項目</th>{previous && <th>現在</th>}<th>{previous ? '取り込み後' : '内容'}</th></tr></thead><tbody>{keys.map(key => <tr key={key}><th>{FIELD_LABELS[key] ?? key}</th>{previous && <td>{displayValue(old?.[key])}</td>}<td>{displayValue(next[key])}</td></tr>)}</tbody></table></div>
+    <div className="inbox-table-wrap"><table><caption>{previous ? '変更前と取り込む情報' : '取り込む情報'}</caption><thead><tr><th>項目</th>{previous && <th>現在</th>}<th>{previous ? '取り込み後' : '内容'}</th></tr></thead><tbody>{keys.map(key => <tr key={key}><th>{FIELD_LABELS[key] ?? key}</th>{previous && <td>{displayValue(old?.[key], key)}</td>}<td>{displayValue(next[key], key)}</td></tr>)}</tbody></table></div>
     <p>出典: {item.source.title} {item.source.locator ?? ''}{item.source.url && <> · <a href={item.source.url} target="_blank" rel="noopener noreferrer">原資料を開く</a></>}</p>
     {item.source.excerpt && <blockquote>{item.source.excerpt}</blockquote>}
     {(item.related_ids?.length ?? 0) > 0 && <p>関連ID: {item.related_ids?.join('、')}</p>}
@@ -45,7 +42,7 @@ export function UniversityInbox({ inbox, courses, disabled, onChange, onImport }
   const stale = Boolean((bundle || recovery) && (baseline !== JSON.stringify(inbox) || courseBaseline !== JSON.stringify(courses)));
   const invalidChoice = rows.some(row => selected.includes(row.item.id) && (row.kind === 'blocked' || (row.warnings.length > 0 && !reviewed.includes(row.item.id))));
   const chosen = rows.filter(row => selected.includes(row.item.id) && (row.kind === 'add' || row.kind === 'update'));
-  const courseEntries = recovery ? inbox.records.filter(record => record.item.type === 'course').map(record => ({ collection: record.collection, item: record.item })) : bundle && importMode === 'register' ? chosen.filter(row => row.item.type === 'course').map(row => ({ collection: bundle.collection, item: row.item })) : [];
+  const courseEntries = recovery ? inbox.records.filter(record => record.item.type === 'course').map(record => ({ collection: record.collection, item: record.item })) : bundle && importMode === 'register' ? registrationEntries(rows, bundle.collection, selected) : [];
   const courseRows = planInboxCourses(courses, courseEntries, courseTerms);
   const selectedCourseRows = courseRows.filter(row => courseSelected.includes(row.key));
   const invalidCourses = courseSelectionConflict(selectedCourseRows) || selectedCourseRows.some(row => row.kind === 'blocked') || (selectedCourseRows.some(row => row.warnings.length) && !courseReviewed);
@@ -62,12 +59,12 @@ export function UniversityInbox({ inbox, courses, disabled, onChange, onImport }
     catch (cause) { setBundle(null); setMessage(cause instanceof Error ? cause.message : '解析できませんでした。'); }
   }
   function confirm() {
-    if (disabled || stale || invalidCourses || (!recovery && (!bundle || invalidChoice || !chosen.length)) || (recovery && !selectedCourseRows.length)) return;
+    if (disabled || stale || invalidCourses || (!recovery && (!bundle || invalidChoice || (!chosen.length && !selectedCourseRows.length))) || (recovery && !selectedCourseRows.length)) return;
     try {
       const next = recovery ? inbox : applyManabiImport(inbox, bundle!, selected, reviewed, baseline);
       onImport(next, courseEntries, courseTerms, selectedCourseRows.map(row => row.key), courseBaseline);
       setBundle(null); setRecovery(false); setSelected([]); setReviewed([]);
-      setMessage(`大学情報${recovery ? 0 : chosen.length}件、講義${selectedCourseRows.length}件を反映しました。時間割で対象学期を選び、授業ノートも確認できます。上部の保存状態をご確認ください。`);
+      setMessage(selectedCourseRows.length ? `講義${selectedCourseRows.length}件を時間割・ノートに登録しました。${selectedCourseRows[0].course.term}へ切り替えています。上部の保存状態をご確認ください。` : `大学情報${chosen.length}件を保存しました。授業候補の保存だけでは時間割・ノートに登録されません。時間割で対象年度・学期の空き枠から選ぶか、上の授業カタログで確認して登録してください。`);
     } catch (cause) { setMessage(cause instanceof Error ? cause.message : '取り込めませんでした。'); }
   }
   async function copyPrompt() {
@@ -97,9 +94,10 @@ export function UniversityInbox({ inbox, courses, disabled, onChange, onImport }
         <h3>取り込みプレビュー</h3><p>情報集合: {bundle.collection}</p>
         <button type="button" disabled={disabled || stale} onClick={() => setSelected(rows.filter(row => row.kind === 'add' || row.kind === 'update').map(row => row.item.id))}>新規・更新候補をすべて選択</button>
         <p>新規 {rows.filter(row => row.kind === 'add').length}件 / 更新 {rows.filter(row => row.kind === 'update').length}件 / 重複 {rows.filter(row => row.kind === 'same').length}件 / 要確認 {rows.filter(row => row.warnings.length).length}件 / 適用不可 {rows.filter(row => row.kind === 'blocked').length}件</p>
+        {rows.some(row => row.kind === 'same' && row.item.type === 'course') && <p>「重複」は同じ情報がInboxに保存済みという意味です。時間割・ノートへの登録済みとは限りません。再保存は不要で、講義登録だけ確認できます。<button type="button" disabled={disabled || stale} onClick={() => { setImportMode('register'); setCourseReviewed(false); }}>保存済み情報の講義登録を確認</button></p>}
         {chosen.some(row => row.warnings.length) && <label className="inbox-check"><input type="checkbox" checked={chosen.filter(row => row.warnings.length).every(row => reviewed.includes(row.item.id))} disabled={disabled || stale} onChange={event => setReviewed(event.target.checked ? chosen.filter(row => row.warnings.length).map(row => row.item.id) : [])} />選択した情報すべての出典・要確認事項を読み、不明点を残して保存することを確認しました</label>}
         {rows.map(row => <article className="inbox-item" key={row.item.id}>
-          <h4>{row.item.title}</h4><p>{ITEM_LABELS[row.item.type]} · {{ add: '新規', update: '更新候補', same: '重複（取り込み不要）', blocked: '適用不可' }[row.kind]}</p>
+          <h4>{row.item.title}</h4><p>{ITEM_LABELS[row.item.type]} · {{ add: '新規', update: '更新候補', same: '情報は保存済み（再保存不要）', blocked: '適用不可' }[row.kind]}</p>
           {row.warnings.length > 0 && <ul className="inbox-warning">{row.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>}
           <ItemDetails item={row.item} previous={row.kind === 'update' ? row.existing?.item : undefined} />
           {(row.kind === 'add' || row.kind === 'update') && <>
@@ -109,7 +107,7 @@ export function UniversityInbox({ inbox, courses, disabled, onChange, onImport }
         </article>)}
         <InboxCoursePreview rows={courseRows} terms={courseTerms} selected={courseSelected} disabled={disabled || stale} onTerm={(key, term) => { setCourseTerms(current => ({ ...current, [key]: term })); setCourseSelected(current => current.filter(value => value !== key)); setCourseReviewed(false); }} onSelect={(key, checked) => { setCourseSelected(toggle(courseSelected, key, checked)); setCourseReviewed(false); }} />
         {selectedCourseRows.some(row => row.warnings.length) && <label className="inbox-check"><input type="checkbox" checked={courseReviewed} disabled={disabled || stale} onChange={event => setCourseReviewed(event.target.checked)} />講義の反映先・未設定・重複の注意を確認しました</label>}
-        <button type="button" onClick={confirm} disabled={disabled || stale || invalidChoice || invalidCourses || !chosen.length}>確認した{chosen.length}件を取り込む</button>
+        <button type="button" onClick={confirm} disabled={disabled || stale || invalidChoice || invalidCourses || (!chosen.length && !selectedCourseRows.length)}>{selectedCourseRows.length ? `確認した講義${selectedCourseRows.length}件を時間割・ノートに登録` : `確認した${chosen.length}件を取り込む`}</button>
         {importMode === 'catalog' && <p>この操作では候補だけ保存します。上の授業カタログで履修する授業を選んでください。</p>}
       </section>}
     </section>

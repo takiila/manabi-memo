@@ -71,7 +71,8 @@ export const FIELD_LABELS: Record<string, string> = {
 };
 
 export function informationWarnings(item: ImportItem): string[] {
-  const data = item.data as Record<string, unknown>;
+  const data = { ...(item.type === 'course' ? { term: item.term } : {}), ...item.data } as Record<string, unknown>;
+  if (item.type === 'course' && data.term == null) data.term = item.term;
   const warnings = (REQUIRED_FACTS[item.type] ?? []).filter(key => data[key] == null || (Array.isArray(data[key]) && data[key].length === 0)).map(key => `${FIELD_LABELS[key] ?? key}が未確認です。`);
   if (item.needs_review) warnings.push('AIが確認を必要としています。');
   warnings.push(...(item.uncertainties ?? []));

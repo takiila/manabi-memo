@@ -49,3 +49,10 @@ test('course example validates known and unknown schedules with review evidence'
   assert.ok(unknown.uncertainties.length);
   assert.match(unknown.summary, /履修候補/);
 });
+
+test('曜日は数値で出力し、候補保存と履修登録を混同しない', () => {
+  assert.match(MANABI_AI_PROMPT, /"weekday":4,"period":1/);
+  assert.match(MANABI_AI_PROMPT, /"weekday":5,"period":3/);
+  assert.match(MANABI_AI_PROMPT, /"4".*文字列.*weekday/);
+  assert.match(MANABI_AI_PROMPT, /同じ情報が保存済み.*講義登録だけ確認/);
+});
