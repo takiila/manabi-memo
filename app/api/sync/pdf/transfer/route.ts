@@ -16,6 +16,7 @@ type TransferBody = {
 };
 
 export async function POST(request: Request) {
+  if (process.env.SYNC_PDF_MODE === "references") return json({ error: "PDF本体のクラウド転送は無効です。" }, 403);
   if (!isSameOriginRequest(request)) return json({ error: "送信元を確認できませんでした。" }, 403);
   const auth = await accountForRequest(request);
   if ("response" in auth) return auth.response;

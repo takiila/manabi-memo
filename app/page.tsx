@@ -84,6 +84,7 @@ import CampusModule from "./campus-module";
 import { localCampusPreviewEnabled } from "./local-campus-preview";
 import AccountSync from "./account-sync";
 import PdfReferenceCard from "./pdf-reference-card";
+import { canApplyReferenceRestore, retainLocalPdf } from "./reference-sync-model";
 import {
   fullPdfPatch,
   isMatchingPdfReference,
@@ -399,7 +400,7 @@ export default function HomePage() {
   const latestStateRef = useRef<SavedState>({});
   const storageChannel = useRef<BroadcastChannel | null>(null);
 
-  function applyNormalizedState(normalized: NormalizedState) {
+  function applyNormalizedState(normalized: NormalizedState, deleteExpiredPdfs = true) {
     const expiredCourseIds = new Set(normalized.courses.filter((course) => isTrashExpired(course)).map((course) => course.id));
     const expiredSessionIds = new Set(normalized.sessions.filter((session) => isTrashExpired(session) || expiredCourseIds.has(session.courseId)).map((session) => session.id));
     const expiredPdfIds = normalized.sessions.filter((session) => expiredSessionIds.has(session.id)).map((session) => session.id);
@@ -409,7 +410,7 @@ export default function HomePage() {
       sessions: purgeExpiredTrash(normalized.sessions).filter((session) => !expiredCourseIds.has(session.courseId)),
       memos: purgeExpiredTrash(normalized.memos).filter((memo) => !expiredCourseIds.has(memo.courseId) && !expiredSessionIds.has(memo.sessionId)),
     };
-    if (expiredPdfIds.length > 0) void deletePdfsFromDevice(expiredPdfIds);
+    if (deleteExpiredPdfs && expiredPdfIds.length > 0) void deletePdfsFromDevice(expiredPdfIds);
     setCourses(safeState.courses);
     setSessions(safeState.sessions);
     setMemos(safeState.memos);
@@ -1078,7 +1079,31 @@ export default function HomePage() {
 
   async function applyCloudAccountState(value: unknown, pdfs: Array<{ id: string; blob: Blob }>) {
     if (!isSavedStateShape(value)) throw new Error("クラウドの保存形式を確認できませんでした");
+    const expectedRevision = storageRevision.current;
+    const expectedFingerprint = stateFingerprint(latestStateRef.current);
+    const snapshotSessions = (latestStateRef.current.sessions ?? sessions) as SessionRecord[];
+    const retainedPdfIds = new Set<string>();
     let normalized = normalizeSavedState(value);
+    const expiredCourseIds = new Set(normalized.courses.filter((course) => isTrashExpired(course)).map((course) => course.id));
+    const expiredSessionIds = new Set(normalized.sessions.filter((session) => isTrashExpired(session) || expiredCourseIds.has(session.courseId)).map((session) => session.id));
+    normalized = {
+      ...normalized,
+      courses: purgeExpiredTrash(normalized.courses),
+      sessions: purgeExpiredTrash(normalized.sessions).filter((session) => !expiredCourseIds.has(session.courseId)),
+      memos: purgeExpiredTrash(normalized.memos).filter((memo) => !expiredCourseIds.has(memo.courseId) && !expiredSessionIds.has(memo.sessionId)),
+    };
+    const localPdfs = await loadAllPdfs();
+    const localSessions = new Map(snapshotSessions.map((session) => [session.id, session]));
+    for (const session of normalized.sessions) {
+      if (!session.pdfReferenceOnly) continue;
+      const entry = localPdfs.find((pdf) => pdf.id === session.id);
+      if (!entry) continue;
+      const retained = retainLocalPdf(session, localSessions.get(session.id), await sha256Blob(entry.blob));
+      if (retained.hasPdf) {
+        Object.assign(session, retained);
+        retainedPdfIds.add(entry.id);
+      }
+    }
     if (accountCampusEntitlement !== null) {
       normalized = {
         ...normalized,
@@ -1088,17 +1113,18 @@ export default function HomePage() {
         }),
       };
     }
-    const pdfIds = new Set(pdfs.map((entry) => entry.id));
+    const pdfIds = new Set([...pdfs.map((entry) => entry.id), ...retainedPdfIds]);
     const expectedIds = normalized.sessions.filter((session) => session.hasPdf).map((session) => session.id);
     if (expectedIds.some((id) => !pdfIds.has(id)) || pdfs.some((entry) => !normalized.sessions.some((session) => session.id === entry.id))) {
       throw new Error("クラウドのノートとPDFの対応を確認できませんでした");
     }
-    saveEpoch.current += 1;
     await saveChain.current.catch(() => undefined);
-    const saved = await restoreAppStateAndPdfs(normalized, pdfs, true, CURRENT_SCHEMA_VERSION, storageRevision.current, writerId.current);
+    if (!canApplyReferenceRestore(expectedRevision, storageRevision.current, expectedFingerprint, stateFingerprint(latestStateRef.current))) throw new Error("確認中に端末の内容が変わりました。元のPDFとメモを残したまま同期を停止しました。再度内容を確認してください。");
+    saveEpoch.current += 1;
+    const saved = await restoreAppStateAndPdfs(normalized, pdfs, false, CURRENT_SCHEMA_VERSION, expectedRevision, writerId.current);
     storageRevision.current = saved.revision;
     lastPersistedFingerprint.current = stateFingerprint(normalized);
-    applyNormalizedState(normalized);
+    applyNormalizedState(normalized, false);
     setLastSavedAt(saved.savedAt);
     setSaveStatus("saved");
     setAutoSaveEnabled(true);

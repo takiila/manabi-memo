@@ -12,6 +12,7 @@ export async function GET() {
       database: process.env.DATABASE_URL?.trim().match(/^postgres(?:ql)?:\/\//i) ? "postgresql" : "sqlite",
       pdfStorage: store.kind,
       directPdfTransfer: Boolean(store.createDirectUpload && store.createDirectDownload),
+      syncPdfMode: process.env.SYNC_PDF_MODE === "references" ? "references" : "full",
       campusAccess: campusAccessMode(),
     }, { headers: { "cache-control": "no-store" } });
   } catch {

@@ -12,7 +12,8 @@ import {
   signUpWithEmail,
 } from "./firebase-auth-client";
 import { loadAllPdfs } from "./local-files";
-import { decideSyncPlan, fingerprintState, type LocalSyncMeta } from "./sync-model";
+import { decideSyncPlan, type LocalSyncMeta } from "./sync-model";
+import { referencesForSync, referenceSyncFingerprint } from "./reference-sync-model";
 import { pdfVersionsFromState } from "./pdf-sync-model";
 import { retryTransient } from "./sync-retry-model";
 
@@ -72,7 +73,7 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
   const [authMessage, setAuthMessage] = useState("");
   const [mismatchedAccount, setMismatchedAccount] = useState(false);
   const pendingUploadRef = useRef<PendingUpload | null>(null);
-  const localFingerprint = useMemo(() => fingerprintState(currentState), [currentState]);
+  const localFingerprint = useMemo(() => referenceSyncFingerprint(referencesForSync(currentState, meta?.pdfHashes)), [currentState, meta?.pdfHashes]);
 
   useEffect(() => {
     let cancelled = false;
@@ -199,7 +200,7 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
         setPanelOpen(true);
         return;
       }
-      const cloudFingerprint = remote.exists ? fingerprintState(remote.state) : "";
+      const cloudFingerprint = remote.exists ? referenceSyncFingerprint(remote.state) : "";
       const storedMeta = readMeta(account.id);
       const plan = decideSyncPlan({
         localHasData,
@@ -240,10 +241,13 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
     setPhase("syncing");
     setProgress("ノートと予定を保存しています");
     try {
-      const pdfIds = pdfSessionIds(currentState);
       const entries = await loadAllPdfs();
+      const referenceHashes: Record<string, string> = {};
+      for (const entry of entries.filter((item) => pdfSessionIds(currentState).includes(item.id))) referenceHashes[entry.id] = await hashBlob(entry.blob);
+      const syncState = referencesForSync(currentState, referenceHashes);
+      const pdfIds = pdfSessionIds(syncState);
       const entriesById = new Map(entries.map((entry) => [entry.id, entry]));
-      const tokens = pdfTokens(currentState);
+      const tokens = pdfTokens(syncState);
       const manifests: PendingUpload["manifests"] = [];
       for (const id of pdfIds) {
         const entry = entriesById.get(id);
@@ -255,7 +259,7 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
         const response = await retryAuthenticatedFetch("/api/sync/state", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ baseRevision, schemaVersion, state: currentState, deviceId: deviceId(), pdfIds, pdfs: manifests }),
+          body: JSON.stringify({ baseRevision, schemaVersion, state: syncState, deviceId: deviceId(), pdfIds, pdfs: manifests }),
         });
         const result = await response.json() as { transactionId?: string; revision?: number; error?: string; conflict?: boolean };
         if (response.status === 409 || result.conflict) return void await showSyncConflict();
@@ -290,8 +294,7 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
       const commitResult = await commitResponse.json().catch(() => ({})) as { revision?: number; error?: string; conflict?: boolean };
       if (commitResponse.status === 409 || commitResult.conflict) return void await showSyncConflict();
       if (!commitResponse.ok || commitResult.revision !== pending.targetRevision) throw new Error(commitResult.error ?? "クラウド同期を確定できませんでした。");
-      const hashes = Object.fromEntries(pending.manifests.map((item) => [item.sessionId, item.sha256]));
-      const next = makeMeta(account.id, pending.targetRevision, localFingerprint, meta, hashes, tokens);
+      const next = makeMeta(account.id, pending.targetRevision, referenceSyncFingerprint(syncState), meta, referenceHashes, pdfTokens(currentState));
       pendingUploadRef.current = null;
       persistMeta(next);
       setMeta(next);
@@ -304,6 +307,7 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
   }
 
   async function inspectLocalPdfs(remotePdfs: CloudPdf[], stateRevision: number) {
+    if (remotePdfs.length === 0) return { hashes: meta?.pdfHashes ?? {}, tokens: meta?.pdfTokens ?? {}, needsUpload: false };
     const entries = await loadAllPdfs();
     const remoteById = new Map(remotePdfs.map((item) => [item.sessionId, item]));
     const tokens = pdfTokens(currentState);
@@ -335,8 +339,11 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
     setPhase("syncing");
     setProgress("クラウドの内容を確認しています");
     try {
+      if (remote.state && typeof remote.state === "object") {
+        remote = { ...remote, state: referencesForSync(remote.state, Object.fromEntries(remote.pdfs.map((item) => [item.sessionId, item.sha256]))), pdfs: [] };
+      }
       const pdfs: Array<{ id: string; blob: Blob }> = [];
-      const hashes: Record<string, string> = {};
+      const hashes: Record<string, string> = Object.fromEntries((remote.state as { sessions?: Array<{ id: string; pdfReferenceSha256?: string }> }).sessions?.flatMap((session) => session.pdfReferenceSha256 ? [[session.id, session.pdfReferenceSha256]] : []) ?? []);
       const expectedVersions = pdfVersionsFromState(remote.state);
       for (let index = 0; index < remote.pdfs.length; index += 1) {
         const item = remote.pdfs[index];
@@ -359,7 +366,7 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
         hashes[item.sessionId] = sha256;
       }
       await onApplyCloud(remote.state, pdfs);
-      const fingerprint = fingerprintState(remote.state);
+      const fingerprint = referenceSyncFingerprint(remote.state);
       const next = makeMeta(account.id, remote.revision, fingerprint, meta, hashes, pdfTokens(remote.state));
       persistMeta(next);
       setMeta(next);
@@ -526,7 +533,7 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
       <section className="account-sync-panel" role="dialog" aria-modal="true" aria-labelledby="account-sync-title" onMouseDown={(event) => event.stopPropagation()}>
         <header><div><p className="eyebrow">ACCOUNT & SYNC BETA</p><h2 id="account-sync-title">アカウントとクラウド同期</h2></div><button type="button" onClick={() => setPanelOpen(false)} aria-label="閉じる"><X size={19} /></button></header>
         {account === undefined || firebaseEnabled === null ? <div className="account-sync-loading"><LoaderCircle className="spin" size={24} /> ログイン状態を確認しています</div> : !account && firebaseEnabled ? <div className="account-signin-card firebase-signin-card">
-          <span><UserRound size={24} /></span><h3>同じ学習環境を、PCとスマートフォンで</h3><p>まなびメモのアカウントで、時間割、講義ノート、付箋、Campus Musterの予定、PDFを端末間で同期できます。ログインだけでは同期を開始しません。</p>
+          <span><UserRound size={24} /></span><h3>同じ学習環境を、PCとスマートフォンで</h3><p>時間割、講義ノート、付箋と資料名・ページ番号を端末間で同期できます。PDF本体と抽出本文は端末内だけに残します。ログインだけでは同期を開始しません。</p>
           <button className="account-google" type="button" onClick={() => void googleSignIn()} disabled={authBusy}><LogIn size={18} /> Googleで続ける</button>
           <div className="account-auth-divider"><span>または</span></div>
           <div className="account-auth-tabs" role="tablist" aria-label="アカウント操作"><button type="button" role="tab" aria-selected={authMode === "signin"} onClick={() => { setAuthMode("signin"); setAuthMessage(""); }}>ログイン</button><button type="button" role="tab" aria-selected={authMode === "signup"} onClick={() => { setAuthMode("signup"); setAuthMessage(""); }}>新規登録</button></div>
@@ -547,7 +554,7 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
           {(phase === "choice" || phase === "conflict") && <div className="sync-choice" role="alert"><AlertTriangle size={21} /><div><h3>{cloud?.deleted ? "別の端末でクラウドデータが削除されています" : phase === "choice" ? "最初に残す内容を選んでください" : "この端末とクラウドの両方に変更があります"}</h3><p>{cloud?.deleted ? "この端末の内容は残しています。同期を再開するか、この端末では同期を停止するか選んでください。" : "自動では上書きしません。どちらかを選ぶまで、端末内の内容は変更されません。"}</p></div>{!cloud?.deleted && <div className="sync-compare"><SyncSummary label="この端末" state={currentState} pdfCount={pdfSessionIds(currentState).length} /><SyncSummary label="クラウド" state={cloud?.state} pdfCount={cloud?.pdfs.length ?? 0} /></div>}<button type="button" onClick={() => void uploadLocal(cloud?.revision ?? 0)}>この端末の内容をクラウドへ保存</button><button type="button" className="secondary" onClick={() => cloud?.deleted ? acceptRemoteDeletion() : void downloadCloud()}>{cloud?.deleted ? "この端末では同期を停止" : "クラウドの内容をこの端末へ反映"}</button></div>}
           {!meta?.enabled && phase !== "choice" && phase !== "conflict" && phase !== "account-mismatch" && <button type="button" className="account-primary full" onClick={() => void enableSync()}><Cloud size={18} /> クラウド同期を始める</button>}
           {meta?.enabled && phase !== "choice" && phase !== "conflict" && <div className="account-sync-actions"><button type="button" onClick={() => void reconcile()} disabled={phase === "syncing" || phase === "checking"}><RefreshCw size={17} /> 今すぐ同期</button><button type="button" onClick={stopSync}>自動同期を停止</button></div>}
-          <div className="account-sync-scope"><h3>同期する内容</h3><p>時間割・講義・授業回・ノート本文・付箋・タグ・Campus Musterの提出物、試験、出席、学習タスク、GPA計画、卒業要件・大学情報Inbox・PDF</p><small>同じアカウントのPCとスマートフォンで共有され、別アカウントのデータとは分離されます。</small></div>
+          <div className="account-sync-scope"><h3>同期する内容</h3><p>時間割・講義・授業回・ノート本文・付箋・タグ・Campus Muster・大学情報Inbox・資料名とページ参照</p><small>PDF本体と抽出本文は送信しません。PDFがない端末でも、資料名・何ページに書いたか・メモ内容を確認し、LMSで元の資料を開いて読めます。端末内のPDFは同期によって削除しません。無料枠の上限では同期を止め、端末内保存を続けます。</small></div>
           {meta?.enabled && <button type="button" className="account-delete-cloud" onClick={() => void deleteCloud()}><Trash2 size={16} /> クラウド上の学習データを削除</button>}
         </>}
       </section>

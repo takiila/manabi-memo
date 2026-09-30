@@ -1,5 +1,7 @@
 # 2〜3人の個人運営向けVercel公開手順
 
+現在の推奨は[無料プランでのメモ・ページ参照同期](docs/free-reference-sync.md)です。`SYNC_PDF_MODE=references` を本番に設定し、PDF本体を端末内だけに残します。R2・Blob・S3の契約と以下のPDFストレージ設定は不要です。以下のPDF同期構成は旧版・明示的に本体同期を運用する場合の参考です。
+
 ## 採用構成
 
 - アプリ: Vercel Hobby（個人・非商用）

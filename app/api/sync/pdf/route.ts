@@ -36,6 +36,7 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
+  if (process.env.SYNC_PDF_MODE === "references") return json({ error: "PDF本体のクラウド保存は無効です。端末内に保存してください。" }, 403);
   if (!isSameOriginRequest(request)) return json({ error: "送信元を確認できませんでした。" }, 403);
   const auth = await accountForRequest(request);
   if ("response" in auth) return auth.response;

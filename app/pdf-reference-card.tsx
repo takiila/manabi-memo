@@ -22,7 +22,7 @@ export default function PdfReferenceCard({ fileName, pageCount, lastPage, memoPa
         <h2>{fileName || "講義資料"}</h2>
         <div><span>全{pageCount}ページ</span><label>参照ページ <input type="number" min="1" max={pageCount} value={lastPage} onChange={(event) => onPageChange(Math.min(Math.max(1, Number(event.target.value) || 1), pageCount))} /></label>{releasedAt && <span>{formatDate(releasedAt)}に軽量化</span>}</div>
         <p className="pdf-reference-pages">{pages.length > 0 ? `付箋の参照ページ: ${pages.map((page) => `${page}p`).join("・")}` : "ページ参照は、PDFを再追加した後も同じ位置へ戻れます。"}</p>
-        <small><SearchX size={13} /> PDF本体と抽出テキストは保存していません。表示・本文検索には元のPDFを再追加してください。</small>
+        <small><SearchX size={13} /> この端末にはPDF本体がありません。LMSで元のPDFの同じページを開いて、メモと見比べられます。アプリ内表示・本文検索には元のPDFを再追加してください。</small>
       </div>
       <label className="pdf-reference-restore"><Paperclip size={16} /> 元のPDFを再追加<input type="file" accept="application/pdf,.pdf" onChange={onSelect} disabled={disabled} /></label>
     </section>

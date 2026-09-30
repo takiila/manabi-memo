@@ -388,6 +388,10 @@ function parseStateBody(body: PutBody) {
   const pdfIds = normalizePdfIds(body.pdfIds);
   const state = body.state;
   if (baseRevision === null || schemaVersion === null || !deviceId || !validStateShape(state) || !pdfIds) return { ok: false as const, error: "同期内容の形式を確認できませんでした。", status: 400 as const };
+  if (process.env.SYNC_PDF_MODE === "references" && (pdfIds.length > 0 || (Array.isArray(state.sessions) && state.sessions.some((session: unknown) => {
+    const value = session && typeof session === "object" ? session as Record<string, unknown> : {};
+    return value.hasPdf === true || (Array.isArray(value.pageTexts) && value.pageTexts.length > 0) || (Array.isArray(value.topics) && value.topics.length > 0);
+  })))) return { ok: false as const, error: "この公開版はメモとページ参照のみ同期します。アプリを更新してください。", status: 400 as const };
   const payload = JSON.stringify(state);
   if (new TextEncoder().encode(payload).byteLength > MAX_STATE_BYTES) return { ok: false as const, error: "ノートデータが同期上限を超えています。PDFを除いた状態でも大きすぎます。", status: 413 as const };
   const pdfVersions = pdfVersionsFromState(state);
