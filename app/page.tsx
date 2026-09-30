@@ -5,6 +5,7 @@ import { UniversityInbox } from "./university-inbox";
 import { EMPTY_INFORMATION_INBOX, normalizeInformationInbox } from "./manabi-import-model";
 import type { InformationInbox } from "./manabi-import-types";
 import { applyCourseImport, planCourseImport, type CourseInfo } from "./course-transfer";
+import { applyInboxCourses, ensureCourseNotes, planInboxCourses, type CourseEntry } from "./inbox-course-model";
 
 import {
   AlertTriangle,
@@ -677,6 +678,26 @@ export default function HomePage() {
     () => activeMemos.find((memo) => memo.id === reflectionMemoId) ?? null,
     [activeMemos, reflectionMemoId],
   );
+
+  function importInboxCourses(nextInbox: InformationInbox, entries: CourseEntry[], targetTerms: Record<string, string>, selected: string[], baseline: string) {
+    if (!autoSaveEnabled || loadError || ["loading", "conflict", "error"].includes(saveStatus)) throw new Error("端末の保存状態を確認してください。");
+    const plan = planInboxCourses(courses, entries, targetTerms);
+    const next = applyInboxCourses(courses, plan, selected, baseline);
+    const selectedIds = new Set(plan.filter(row => selected.includes(row.key)).map(row => row.course.id));
+    const registered = next.filter(course => selectedIds.has(course.id));
+    const titles = new Map(registered.map(course => [course.id, course.title]));
+    setInbox(nextInbox);
+    setCourses(next);
+    setSessions(current => ensureCourseNotes(registered, current.map(session => titles.has(session.courseId) ? { ...session, course: titles.get(session.courseId)! } : session), course => ({
+      id: createId("session"), courseId: course.id, course: course.title, sessionNumber: "1", title: "第1回のノート",
+      pageCount: 0, pageTexts: [], topics: [], needsOcr: false, hasPdf: false, lastPdfPage: 1,
+      noteText: courseTemplates[course.id] ?? "", notebookPrefs: { ...defaultNotebookPrefs },
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    })));
+    setMemos(current => current.map(memo => titles.has(memo.courseId) ? { ...memo, course: titles.get(memo.courseId)! } : memo));
+    setTerms(current => Array.from(new Set([...current, ...registered.map(course => course.term)])));
+    if (registered.length) setActiveTerm(registered[0].term);
+  }
 
   function chooseCourse(courseId: string) {
     setSelectedCourseId(courseId);
@@ -1610,7 +1631,7 @@ export default function HomePage() {
         )}
 
         <main className={view === "workspace" ? "workspace-main" : ""}>
-          {view === "inbox" && <UniversityInbox inbox={inbox} disabled={!autoSaveEnabled || Boolean(loadError) || saveStatus === "loading" || saveStatus === "conflict" || saveStatus === "error"} onChange={setInbox} />}
+          {view === "inbox" && <UniversityInbox inbox={inbox} courses={courses} disabled={!autoSaveEnabled || Boolean(loadError) || saveStatus === "loading" || saveStatus === "conflict" || saveStatus === "error"} onChange={setInbox} onImport={importInboxCourses} />}
           {view === "start" && (
             <StartView
               courses={activeCourses}

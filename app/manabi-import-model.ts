@@ -59,7 +59,7 @@ function identity(collection: string, item: ImportItem) {
 
 const REQUIRED_FACTS: Partial<Record<ImportItemType, string[]>> = {
   event: ['starts_at'], deadline: ['due_at'], assignment: ['due_at', 'course_code'], seminar: ['academic_year', 'guidance_at', 'application_end', 'selection_method', 'result_at'],
-  laboratory: ['teacher_ids', 'selection_method', 'guidance_at'], teacher: ['name'], course: ['code', 'term'], exam: ['starts_at', 'course_code'], registration: ['closes_at', 'procedure'], document: ['url'],
+  laboratory: ['teacher_ids', 'selection_method', 'guidance_at'], teacher: ['name'], course: ['code', 'term', 'weekday', 'period'], exam: ['starts_at', 'course_code'], registration: ['closes_at', 'procedure'], document: ['url'],
 };
 export const FIELD_LABELS: Record<string, string> = {
   starts_at: '開始日時', ends_at: '終了日時', due_at: '締切', published_at: '公開日', location: '場所',

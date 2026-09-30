@@ -7950,7 +7950,7 @@ textarea:focus-visible,
 .university-inbox p { line-height: 1.7; overflow-wrap: anywhere; }
 .inbox-card { background: var(--surface, #fff); border: 1px solid var(--line, #e3e7eb); border-radius: 18px; padding: 24px; margin-bottom: 24px; min-width: 0; }
 .inbox-card label { display: grid; gap: 8px; margin: 16px 0; font-weight: 600; }
-.inbox-card textarea, .inbox-card input[type="search"], .inbox-card select { width: 100%; min-width: 0; border: 1px solid #ccd3dd; border-radius: 10px; padding: 12px; background: #fff; color: #253046; font: inherit; }
+.inbox-card textarea, .inbox-card input[type="search"], .inbox-card input:not([type]), .inbox-card select { width: 100%; min-width: 0; border: 1px solid #ccd3dd; border-radius: 10px; padding: 12px; background: #fff; color: #253046; font: inherit; }
 .inbox-card textarea { font-family: monospace; resize: vertical; }
 .inbox-card button { min-height: 44px; border: 1px solid #ccd3dd; border-radius: 10px; padding: 10px 16px; background: #edf3fa; color: #253046; cursor: pointer; }
 .inbox-card button:disabled { opacity: .5; cursor: default; }

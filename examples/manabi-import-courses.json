@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0",
+  "collection": "example-university-courses-2026",
+  "items": [
+    {
+      "id": "sample101-2026-front",
+      "type": "course",
+      "title": "サンプル情報学（架空）",
+      "summary": "現在の履修科目（架空の履修確認表に明記）。講義・ノートへの登録は利用者が選択して確認する。",
+      "term": "2026年度 前期",
+      "source": {
+        "kind": "syllabus",
+        "title": "架空大学 2026年度シラバス・履修確認表",
+        "locator": "2ページ SAMPLE101 時間割・履修状態欄",
+        "excerpt": "SAMPLE101 サンプル情報学 2026年 前期 月曜1〜2限（08:40〜10:10） 教室A101 架空の教員 2単位 履修中"
+      },
+      "data": {
+        "code": "SAMPLE101",
+        "term": "2026年度 前期",
+        "instructor": "架空の教員",
+        "credits": 2,
+        "weekday": 1,
+        "period": 1,
+        "room": "A101"
+      }
+    },
+    {
+      "id": "sample202-candidate",
+      "type": "course",
+      "title": "サンプル研究入門（架空）",
+      "summary": "履修候補（資料に明記）。配当学年は2年次後期。火曜の記載はあるが時限・開講年度は未記載。",
+      "source": {
+        "kind": "syllabus",
+        "title": "架空大学 履修候補シラバス",
+        "locator": "3ページ SAMPLE202 配当学年・開講曜日欄",
+        "excerpt": "SAMPLE202 サンプル研究入門 配当:2年次後期 曜日:火曜 時限:未定 履修候補"
+      },
+      "data": {
+        "code": "SAMPLE202",
+        "term": null,
+        "weekday": null,
+        "period": null
+      },
+      "needs_review": true,
+      "uncertainties": [
+        "2年次後期は対象学年であり、開講年度は確認できない。",
+        "火曜と分かるが時限は未定のため、曜日と時限を両方nullにした。",
+        "履修候補のため、講義・ノートへの登録対象にするか利用者の選択が必要。"
+      ]
+    }
+  ]
+}

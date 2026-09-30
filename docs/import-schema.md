@@ -19,6 +19,7 @@ JSONの説明文やMarkdownコードブロックは取り除いてください�
 - [TypeScript型](../app/manabi-import-types.ts): 種別によるdiscriminated union。
 - [ゼミ配属の例](../examples/manabi-import-seminar.json)
 - [全11種の例](../examples/manabi-import-all-types.json)
+- [講義の例（時間割確定・不明）](../examples/manabi-import-courses.json)
 - [ファイルで渡すAI依頼文](ai-import-prompt.md)
 
 ```json
@@ -85,6 +86,26 @@ dataの各フィールドは任意で、文字列・日時・数値は不明な�
 
 academic_yearは2000〜2200、capacityは整数0〜10000、creditsは0〜30。weekdayは月1〜土6、periodは既存の90分授業枠1〜5です。曜日と授業枠は両方指定するか両方不明にします。research_fields/themes/teacher_idsは文字列配列。teacher_idsは同じcollectionのteacherのidを使います。
 
+### 講義の時間割と年度
+
+`course.data.weekday`は月=1、火=2、水=3、木=4、金=5、土=6。`course.data.period`は次の90分枠です。いずれも既存Schemaの任意フィールドで、必須項目の追加はありません。
+
+| period | 時間 |
+|---|---|
+| 1 | 08:40〜10:10 |
+| 2 | 10:20〜11:50 |
+| 3 | 12:40〜14:10 |
+| 4 | 14:20〜15:50 |
+| 5 | 16:00〜17:30 |
+
+既存`course-transfer`の`PACK_GUIDE`に従い、大学資料がこの時間帯に対応する連続時限を明示している場合は1〜2限→period=1、3〜4限→period=2、5〜6限→period=3に変換します。原資料の時限番号をそのまま入れません。異なる体系、単独の「2限」の意味が不明、複数曜日・時限、日曜・枠外の授業を根拠なく単一枠へ丸めません。
+
+提供されたシラバス・時間割から抽出し、時間割の根拠を`source.locator`と`source.excerpt`へ残します。複数資料では資料名も明記し、追加の根拠や矛盾は`summary`または`uncertainties`へ残します。曜日・時限の片方でも不明・曖昧なら両方nullまたは両方省略し、分かる部分をsummary、不明点をuncertaintiesへ記載してneeds_reviewをtrueにします。時間割不明でも、選択・確認した講義と初期ノートは登録でき、時間割への配置は未確定です。
+
+年度と前期・後期が明示されているときは`course.data.term`を`YYYY年度 前期`または`YYYY年度 後期`へ統一します。例: `2026年 前期`→`2026年度 前期`。`item.term`も指定するなら一致させます。`2年次後期`は対象学年なので年度を推測せず、年度不明はtermをnullまたは省略して要確認にします。現在日時や入学年で補完せず、通年・四半期も勝手に前期・後期へ変換しません。
+
+成績表の単位取得済み・過去の科目と現在の履修科目・履修候補を区別し、資料の明示した状態をsummaryへ残します。科目一覧全体を履修中とみなしません。利用者が登録対象を選択して確認します。未対応の履修状態フィールド、assessment、notes、syllabusUrl等を追加せず、評価方法等はsummary、シラバスURLは`data.syllabus_url`を使います。
+
 ゼミ配属ではseminarを全体のタイムラインとし、eventでガイダンス、registrationで希望受付、deadlineで提出期限を表します。teacher/laboratoryをrelated_idsで関連付けます。未確認の選抜方法や結果発表日は要確認として表示されます。
 
 ## 重複と変更
@@ -107,7 +128,7 @@ JSON編集後や確認中にInboxが変更されたときは再解析が必要�
 
 旧state・旧バックアップにInboxがなければ空Inboxへ移行します。不正な保存Inboxは読み込みを停止し、空状態へ自動上書きしません。バックアップの「追加」は同一内容のInboxを重複追加せず、変更のある同IDは別内部UUIDで両方保持します。この場合、次の同ID更新は適用不可と表示します。内容を一方に絞る必要があるときは、確認したバックアップを使う「置き換え」復元を選んでください。
 
-course/assignment/exam等はこの段階では出典付きInbox情報として保存します。既存の時間割やCampusデータへ自動作成・自動上書きせず、Inboxの配属日程・予定・締切一覧へ整理します。共有カレンダーには自動共有しません。Campusの招待設定とは独立して利用できます。資料原本や添付PDF本体はこのImport JSONに含めません。
+利用者がプレビューで個別に選択・確認したcourseは、出典付きInbox情報に加え、講義と初期ノートを作成します。確定した曜日・時限は時間割へ反映し、既存講義の変更も確認を通します。既存ノート・PDFを保持し、保存済みcourseの講義登録を回復する場合もプレビューで対象を確認します。assignment/exam等のcourse以外は出典付きInbox情報として保存し、配属日程・予定・締切一覧へ整理します。共有カレンダーには自動共有しません。Campusの招待設定とは独立して利用できます。資料原本や添付PDF本体はこのImport JSONに含めません。アプリに有料AI APIの組み込みは不要です。
 
 ## 拡張とMCP
 
