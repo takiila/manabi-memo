@@ -31,6 +31,7 @@ export type StorageHealth = {
 
 type PdfEntry = { id: string; blob: Blob };
 type CommitOptions = {
+  signal?: AbortSignal;
   schemaVersion?: number;
   expectedRevision?: number;
   writerId?: string;
@@ -164,11 +165,12 @@ export async function restoreAppStateAndPdfs<T>(
   schemaVersion = 8,
   expectedRevision?: number,
   writerId?: string,
+  signal?: AbortSignal,
 ): Promise<StoredAppState<T>> {
   return commitAppState(
     data,
     { putPdfs: entries, clearPdfs: replace },
-    { schemaVersion, expectedRevision, writerId },
+    { schemaVersion, expectedRevision, writerId, signal },
   );
 }
 
@@ -255,11 +257,16 @@ async function commitAppState<T>(
   validatePdfEntries(changes.putPdfs ?? []);
   const database = await openDatabase();
   try {
+    options.signal?.throwIfAborted();
     const usesPdfs = Boolean(changes.clearPdfs || changes.putPdfs?.length || changes.deletePdfIds?.length);
     const transaction = database.transaction(usesPdfs ? [STATE_STORE, PDF_STORE] : STATE_STORE, "readwrite");
-    const done = transactionDone(transaction);
+    const abort = () => { try { transaction.abort(); } catch { /* Already complete. */ } };
+    options.signal?.addEventListener("abort", abort, { once: true });
+    const done = transactionDone(transaction).finally(() => options.signal?.removeEventListener("abort", abort));
+    void done.catch(() => undefined);
     const stateStore = transaction.objectStore(STATE_STORE);
     const previous = await requestAsPromise<StoredAppState<T> | undefined>(stateStore.get(CURRENT_STATE_KEY));
+    options.signal?.throwIfAborted();
     if (
       typeof options.expectedRevision === "number"
       && (previous?.revision ?? 0) !== options.expectedRevision

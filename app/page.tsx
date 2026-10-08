@@ -1,5 +1,12 @@
 "use client";
 
+import { PlannerDialog } from './planner-dialog';
+import { TagInput } from './planner-tag-input';
+import { PlannerPanel } from "./planner-panel";
+import { PlannerHome } from "./planner-home";
+import { MemoChecklist } from "./memo-checklist";
+import { CourseMemoPanel } from "./course-memo-panel";
+import { EMPTY_PLANNER, normalizePlanner, normalizeChecklist, patchChecklist, projectTodos, type PlannerState, type ChecklistItem, type TodoRow } from "./planner-model";
 import { CourseTransferPanel } from "./course-transfer-panel";
 import { UniversityInbox } from "./university-inbox";
 import { TimetableCatalogDialog } from "./timetable-catalog-dialog";
@@ -121,7 +128,7 @@ import {
   type DisplayPreferences,
 } from "./data-safety-model";
 
-type View = "start" | "course" | "review" | "workspace" | "campus" | "inbox" | "settings";
+type View = "start" | "course" | "review" | "workspace" | "campus" | "inbox" | "planner" | "settings";
 type TagScope = "global" | "course";
 type SaveStatus = "loading" | "dirty" | "saving" | "saved" | "error" | "conflict";
 type NoteReviewState = {
@@ -192,6 +199,7 @@ type Reflection = {
 };
 
 type Memo = {
+  checklist?: ChecklistItem[];
   id: string;
   sessionId: string;
   courseId: string;
@@ -229,6 +237,7 @@ type SavedState = {
   tutorialSeen?: boolean;
   campus?: CampusState;
   inbox?: InformationInbox;
+  planner?: PlannerState;
   displayPreferences?: DisplayPreferences;
 };
 
@@ -244,6 +253,7 @@ type NormalizedState = {
   tutorialSeen: boolean;
   campus: CampusState;
   inbox: InformationInbox;
+  planner: PlannerState;
   displayPreferences: DisplayPreferences;
 };
 
@@ -292,7 +302,7 @@ const PREVIOUS_STATE_KEYS = [
   "manabi-memo-state-v2",
 ];
 const LEGACY_STATE_KEY = "manabi-memo-state-v1";
-const CURRENT_SCHEMA_VERSION = 13;
+const CURRENT_SCHEMA_VERSION = 14;
 const DEFAULT_TERM = defaultAcademicTerm();
 const weekdays = [
   { value: 1, short: "月", label: "月曜日" },
@@ -333,6 +343,8 @@ export default function HomePage() {
   const [terms, setTerms] = useState<string[]>([DEFAULT_TERM]);
   const [tutorialSeen, setTutorialSeen] = useState(false);
   const [campus, setCampus] = useState<CampusState>(EMPTY_CAMPUS_STATE);
+  const [planner, setPlanner] = useState<PlannerState>(EMPTY_PLANNER);
+  const [checklistMemoId, setChecklistMemoId] = useState<string | null>(null);
   const [inbox, setInbox] = useState<InformationInbox>(EMPTY_INFORMATION_INBOX);
   const [displayPreferences, setDisplayPreferences] = useState<DisplayPreferences>(DEFAULT_DISPLAY_PREFERENCES);
   const [accountCampusEntitlement, setAccountCampusEntitlement] = useState<boolean | null>(null);
@@ -423,6 +435,7 @@ export default function HomePage() {
     setTutorialSeen(safeState.tutorialSeen);
     setCampus(safeState.campus);
     setInbox(safeState.inbox);
+    setPlanner(safeState.planner);
     setDisplayPreferences(safeState.displayPreferences);
     setActiveTerm(safeState.activeTerm);
     const firstCourseId = safeState.courses.find((course) => !course.archivedAt && !course.deletedAt)?.id ?? safeState.courses.find((course) => !course.deletedAt)?.id ?? "";
@@ -516,7 +529,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!hydrated || !autoSaveEnabled) return;
-    const state: SavedState = { courses, sessions, memos, globalTags, courseTags, courseTemplates, terms, activeTerm, tutorialSeen, campus, inbox, displayPreferences };
+    const state: SavedState = { courses, sessions, memos, globalTags, courseTags, courseTemplates, terms, activeTerm, tutorialSeen, campus, inbox, planner, displayPreferences };
     latestStateRef.current = state;
     const fingerprint = stateFingerprint(state);
     if (fingerprint === lastPersistedFingerprint.current) return;
@@ -546,7 +559,7 @@ export default function HomePage() {
       });
     }, 520);
     return () => window.clearTimeout(saveTimer);
-  }, [activeTerm, autoSaveEnabled, campus, inbox, courseTags, courseTemplates, courses, displayPreferences, globalTags, hydrated, memos, sessions, terms, tutorialSeen]);
+  }, [activeTerm, autoSaveEnabled, campus, inbox, planner, courseTags, courseTemplates, courses, displayPreferences, globalTags, hydrated, memos, sessions, terms, tutorialSeen]);
 
   useEffect(() => {
     if (typeof BroadcastChannel === "undefined") return;
@@ -609,6 +622,17 @@ export default function HomePage() {
   const activeCourses = useMemo(() => activeOnly(courses), [courses]);
   const activeSessions = useMemo(() => activeOnly(sessions).filter((session) => activeCourses.some((course) => course.id === session.courseId)), [activeCourses, sessions]);
   const activeMemos = useMemo(() => activeOnly(memos).filter((memo) => activeSessions.some((session) => session.id === memo.sessionId)), [activeSessions, memos]);
+  const plannerInput = { courses, sessions, memos, campus, inbox, planner };
+  const todoRows = projectTodos(plannerInput);
+  const plannerDisabled = !autoSaveEnabled || Boolean(loadError) || ["loading", "conflict", "error"].includes(saveStatus);
+  function patchTodo(row: TodoRow, patch: Partial<ChecklistItem>) {
+    if (plannerDisabled) return;
+    if (row.source === "memo") setMemos(current => current.map(memo => memo.id === row.sourceId ? { ...memo, checklist: patchChecklist(memo.checklist ?? [], row.itemId, patch) } : memo));
+    if (row.source === "personal") setPlanner(current => ({ ...current, todos: current.todos.map(todo => todo.id === row.itemId ? { ...todo, ...patch, id: todo.id } : todo) }));
+    if (row.source === "assignment") setCampus(current => ({ ...current, assignments: current.assignments.map(item => item.id === row.sourceId ? { ...item, ...(patch.text !== undefined ? { title: patch.text } : {}), ...(patch.due !== undefined ? { dueISO: patch.due } : {}), ...(patch.done !== undefined ? { status: patch.done ? "done" : "todo" } : {}), ...(patch.priority !== undefined ? { importance: patch.priority ? 3 : 2 } : {}) } : item) }));
+    if (row.source === "study") setCampus(current => ({ ...current, studyTasks: current.studyTasks.map(item => item.id === row.sourceId ? { ...item, ...(patch.text !== undefined ? { title: patch.text } : {}), ...(patch.done !== undefined ? { status: patch.done ? "done" : "todo", doneAtISO: patch.done ? new Date().toISOString() : null } : {}) } : item) }));
+  }
+  const checklistMemo = activeMemos.find(memo => memo.id === checklistMemoId);
   const localCampusPreview = localCampusPreviewEnabled();
   const effectiveCampusEntitlement = localCampusPreview ? true : accountCampusEntitlement;
   const campusVisible = localCampusPreview || displayPreferences.campusMusterEnabled;
@@ -644,7 +668,7 @@ export default function HomePage() {
 
   const filteredMemos = useMemo(
     () => activeMemos.filter((memo) => {
-      if (!memo.text.trim()) return false;
+      if (!memo.text.trim() && !memo.checklist?.some(item => item.text.trim())) return false;
       const course = activeCourses.find((item) => item.id === memo.courseId);
       const normalizedQuery = reviewQuery.trim().toLocaleLowerCase("ja-JP");
       const matchesTerm = reviewTerm === "すべて" || course?.term === reviewTerm;
@@ -652,6 +676,7 @@ export default function HomePage() {
       const matchesTag = reviewTag === "すべて" || memo.tags.includes(reviewTag);
       const searchableText = [
         memo.text,
+        ...(memo.checklist ?? []).filter(item => !item.deletedAt).map(item => item.text),
         memo.course,
         memo.sessionTitle,
         ...memo.tags,
@@ -1079,7 +1104,7 @@ export default function HomePage() {
   }
 
   function currentSavedState(): SavedState {
-    return { ...latestStateRef.current, courses, sessions, memos, globalTags, courseTags, courseTemplates, terms, activeTerm, tutorialSeen, campus, inbox, displayPreferences };
+    return { ...latestStateRef.current, courses, sessions, memos, globalTags, courseTags, courseTemplates, terms, activeTerm, tutorialSeen, campus, inbox, planner, displayPreferences };
   }
 
   const handleCampusEntitlement = useCallback((enabled: boolean | null) => {
@@ -1099,7 +1124,8 @@ export default function HomePage() {
     setFirebaseEnabled(enabled);
   }, []);
 
-  async function applyCloudAccountState(value: unknown, pdfs: Array<{ id: string; blob: Blob }>) {
+  async function applyCloudAccountState(value: unknown, pdfs: Array<{ id: string; blob: Blob }>, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     if (!isSavedStateShape(value)) throw new Error("クラウドの保存形式を確認できませんでした");
     const expectedRevision = storageRevision.current;
     const expectedFingerprint = stateFingerprint(latestStateRef.current);
@@ -1141,9 +1167,11 @@ export default function HomePage() {
       throw new Error("クラウドのノートとPDFの対応を確認できませんでした");
     }
     await saveChain.current.catch(() => undefined);
+    signal?.throwIfAborted();
     if (!canApplyReferenceRestore(expectedRevision, storageRevision.current, expectedFingerprint, stateFingerprint(latestStateRef.current))) throw new Error("確認中に端末の内容が変わりました。元のPDFとメモを残したまま同期を停止しました。再度内容を確認してください。");
     saveEpoch.current += 1;
-    const saved = await restoreAppStateAndPdfs(normalized, pdfs, false, CURRENT_SCHEMA_VERSION, expectedRevision, writerId.current);
+    const saved = await restoreAppStateAndPdfs(normalized, pdfs, false, CURRENT_SCHEMA_VERSION, expectedRevision, writerId.current, signal);
+    signal?.throwIfAborted();
     storageRevision.current = saved.revision;
     lastPersistedFingerprint.current = stateFingerprint(normalized);
     applyNormalizedState(normalized, false);
@@ -1239,7 +1267,7 @@ export default function HomePage() {
     return id;
   }
 
-  function updateMemo(memoId: string, changes: Partial<Pick<Memo, "text" | "tags" | "x" | "y" | "width" | "height" | "page" | "reflections" | "pinned" | "reviewStage" | "nextReviewAt" | "lastReviewedAt">>) {
+  function updateMemo(memoId: string, changes: Partial<Pick<Memo, "text" | "tags" | "x" | "y" | "width" | "height" | "page" | "reflections" | "pinned" | "reviewStage" | "nextReviewAt" | "lastReviewedAt" | "checklist">>) {
     setMemos((current) => current.map((memo) => memo.id === memoId ? { ...memo, ...changes } : memo));
   }
 
@@ -1414,17 +1442,7 @@ export default function HomePage() {
     const tag = newTag.trim();
     if (!tag || !activeSession) return "";
 
-    if (newTagScope === "global") {
-      setGlobalTags((current) => current.includes(tag) ? current : [...current, tag]);
-    } else {
-      setCourseTags((current) => {
-        const tags = current[activeSession.courseId] ?? current[activeSession.course] ?? [];
-        return {
-          ...current,
-          [activeSession.courseId]: tags.includes(tag) ? tags : [...tags, tag],
-        };
-      });
-    }
+    setGlobalTags((current) => current.includes(tag) ? current : [...current, tag]);
     setNewTag("");
     setShowTagCreator(false);
     return tag;
@@ -1573,6 +1591,7 @@ export default function HomePage() {
             <GraduationCap size={19} />
             <span>大学生活<small>学びも遊びも</small></span>
           </button>}
+          <button className={view === "planner" ? "active" : ""} onClick={() => setView("planner")}><Check size={19} /><span>ToDo・カレンダー</span></button>
           <button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}>
             <Settings2 size={19} />
             <span>設定</span>
@@ -1593,6 +1612,7 @@ export default function HomePage() {
         currentState={currentSavedState()}
         schemaVersion={CURRENT_SCHEMA_VERSION}
         hydrated={hydrated}
+        localReady={saveStatus === "saved" && autoSaveEnabled && !loadError}
         localHasData={hasMeaningfulState(currentSavedState())}
         onApplyCloud={applyCloudAccountState}
         onCampusEntitlement={handleCampusEntitlement}
@@ -1633,8 +1653,9 @@ export default function HomePage() {
 
         <main className={view === "workspace" ? "workspace-main" : ""}>
           {view === "inbox" && <UniversityInbox inbox={inbox} courses={courses} disabled={!autoSaveEnabled || Boolean(loadError) || saveStatus === "loading" || saveStatus === "conflict" || saveStatus === "error"} onChange={setInbox} onImport={importInboxCourses} />}
+          {view === "planner" && <PlannerPanel state={plannerInput} disabled={plannerDisabled} onPatch={patchTodo} onPlanner={setPlanner} onMemo={id => { const memo = activeMemos.find(m => m.id === id); if (memo) openMemoOrigin(memo); }} onCourse={openCourseFromTimetable} />}
           {view === "start" && (
-            <StartView
+            <PlannerHome rows={todoRows} onOpen={() => setView("planner")}><StartView
               courses={activeCourses}
               terms={terms}
               todayDay={hydrated ? new Date().getDay() : 0}
@@ -1652,11 +1673,11 @@ export default function HomePage() {
               onOpenMemo={openMemoOrigin}
               onReflect={setReflectionMemoId}
               onRestoreCourse={restoreCourse}
-            />
+            /></PlannerHome>
           )}
 
           {view === "course" && selectedCourse && (
-            <CourseDetailView
+            <><CourseDetailView
               course={selectedCourse}
               sessions={activeSessions.filter((session) => session.courseId === selectedCourse.id)}
               memoCount={(sessionId) => activeMemos.filter((memo) => memo.sessionId === sessionId).length}
@@ -1673,7 +1694,7 @@ export default function HomePage() {
               nextAssignment={campus.assignments.filter((item) => item.courseId === selectedCourse.id && item.status !== "done").sort((a, b) => a.dueISO.localeCompare(b.dueISO))[0]}
               nextExam={campus.exams.filter((item) => item.courseId === selectedCourse.id).sort((a, b) => a.datetime.localeCompare(b.datetime))[0]}
               onOpenCampus={() => setView("campus")}
-            />
+            /><CourseMemoPanel memos={activeMemos.filter(m => m.courseId === selectedCourse.id)} sessions={activeSessions.filter(s => s.courseId === selectedCourse.id)} disabled={plannerDisabled} onPatch={(id, checklist) => updateMemo(id, { checklist })} onOpen={id => { const memo = activeMemos.find(m => m.id === id); if (memo) openMemoOrigin(memo); }} /></>
           )}
 
           {view === "campus" && campusVisible && (
@@ -1775,6 +1796,7 @@ export default function HomePage() {
           {view === "workspace" && activeSession && (
             <WorkspaceView
               key={activeSession.id}
+              onChecklist={setChecklistMemoId}
               session={activeSession}
               memos={sessionMemos}
               pdfBlob={pdfBlob}
@@ -1782,7 +1804,7 @@ export default function HomePage() {
               setShowPdf={setShowPdf}
               page={page}
               setPage={changePdfPage}
-              globalTags={globalTags}
+              globalTags={Array.from(new Set([...globalTags, ...Object.values(courseTags).flat(), ...activeMemos.flatMap(memo => memo.tags)]))}
               courseTags={currentCourseTags}
               showTagCreator={showTagCreator}
               setShowTagCreator={setShowTagCreator}
@@ -1813,7 +1835,7 @@ export default function HomePage() {
       </div>
 
       {view !== "workspace" && (
-        <nav className={`mobile-nav has-inbox${campusVisible ? " has-campus" : ""}`} aria-label="モバイルメニュー">
+        <nav className={`mobile-nav has-planner has-inbox${campusVisible ? " has-campus" : ""}`} aria-label="モバイルメニュー">
           <button className={view === "start" || view === "course" ? "active" : ""} onClick={returnToStart}>
             <CalendarDays size={20} /><span>時間割</span>
           </button>
@@ -1826,6 +1848,7 @@ export default function HomePage() {
           {campusVisible && <button className={view === "campus" ? "active" : ""} onClick={() => setView("campus")}>
             <GraduationCap size={20} /><span>大学生活</span>
           </button>}
+          <button className={view === "planner" ? "active" : ""} onClick={() => setView("planner")}><Check size={20} /><span>ToDo・予定</span></button>
           <button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}>
             <Settings2 size={20} /><span>設定</span>
           </button>
@@ -1860,6 +1883,7 @@ export default function HomePage() {
         <SessionEditDialog session={activeSessions.find((session) => session.id === editingSessionId) as SessionRecord} sessions={activeSessions.filter((session) => session.courseId === selectedCourseId)} onClose={() => setEditingSessionId(null)} onSave={(number, title) => saveSessionEdit(editingSessionId, number, title)} />
       )}
 
+      {checklistMemo && <PlannerDialog title={`${checklistMemo.course} · チェック項目`} onClose={() => setChecklistMemoId(null)}><label>付箋の本文<textarea value={checklistMemo.text} disabled={plannerDisabled} onChange={e => updateMemo(checklistMemo.id, { text: e.target.value })} /></label><label>共通タグ（カンマ区切り）<TagInput tags={checklistMemo.tags} disabled={plannerDisabled} onChange={tags => updateMemo(checklistMemo.id, { tags })} /></label><MemoChecklist memoId={checklistMemo.id} items={checklistMemo.checklist} disabled={plannerDisabled} onChange={checklist => updateMemo(checklistMemo.id, { checklist })} /></PlannerDialog>}
       {showTermDialog && <TermDialog existingTerms={terms} onClose={() => setShowTermDialog(false)} onSubmit={addTerm} />}
 
       {placementCourseId && activeCourses.find((course) => course.id === placementCourseId) && (
@@ -2871,6 +2895,7 @@ function SessionStartDialog({
 
 function WorkspaceView({
   session,
+  onChecklist,
   memos,
   pdfBlob,
   showPdf,
@@ -2904,6 +2929,7 @@ function WorkspaceView({
   onBack,
 }: {
   session: SessionRecord;
+  onChecklist: (id: string) => void;
   memos: Memo[];
   pdfBlob: Blob | null;
   showPdf: boolean;
@@ -2920,7 +2946,7 @@ function WorkspaceView({
   setNewTagScope: (value: TagScope) => void;
   addCustomTag: () => string;
   createMemo: (position: { x: number; y: number }, source?: { text: string; start: number; end: number }) => string;
-  updateMemo: (memoId: string, changes: Partial<Pick<Memo, "text" | "tags" | "x" | "y" | "width" | "height" | "page" | "reflections" | "pinned" | "reviewStage" | "nextReviewAt" | "lastReviewedAt">>) => void;
+  updateMemo: (memoId: string, changes: Partial<Pick<Memo, "text" | "tags" | "x" | "y" | "width" | "height" | "page" | "reflections" | "pinned" | "reviewStage" | "nextReviewAt" | "lastReviewedAt" | "checklist">>) => void;
   updateSessionNote: (sessionId: string, noteText: string) => void;
   updateNotebookPrefs: (sessionId: string, changes: Partial<NotebookPrefs>) => void;
   hasCourseTemplate: boolean;
@@ -3428,7 +3454,7 @@ function WorkspaceView({
                   <input value={newTag} onChange={(event) => setNewTag(event.target.value)} placeholder="新しいジャンル名" aria-label="新しいジャンル名" />
                   <div className="scope-switch">
                     <button type="button" className={newTagScope === "global" ? "active" : ""} onClick={() => setNewTagScope("global")}>全講義</button>
-                    <button type="button" className={newTagScope === "course" ? "active" : ""} onClick={() => setNewTagScope("course")}>この講義だけ</button>
+                    <span>タグは全講義で共通です</span>
                   </div>
                   <button type="button" className="tag-add" onClick={handleAddCustomTag} disabled={!newTag.trim()}>追加</button>
                   <button type="button" className="tag-cancel" aria-label="ジャンル作成を閉じる" onClick={() => setShowTagCreator(false)}><X size={16} /></button>
@@ -3542,6 +3568,7 @@ function WorkspaceView({
                     rows={5}
                   />
                   <footer>
+                    <button type="button" onClick={() => onChecklist(memo.id)}>チェック項目（{(memo.checklist ?? []).filter(item => !item.deletedAt).length}）</button>
                     {memo.sourceText ? (
                       <button onClick={() => returnToMemoSource(memo)}>元の文章へ戻る</button>
                     ) : <span>自動保存</span>}
@@ -4192,6 +4219,7 @@ function normalizeSavedState(value: SavedState) {
         }))
         : [],
       ...normalizeMemoReview(memo),
+      checklist: normalizeChecklist(memo.checklist),
       deletedAt: typeof memo.deletedAt === "string" && Number.isFinite(new Date(memo.deletedAt).getTime()) ? memo.deletedAt : null,
     };
   });
@@ -4230,6 +4258,7 @@ function normalizeSavedState(value: SavedState) {
     tutorialSeen: typeof value.tutorialSeen === "boolean" ? value.tutorialSeen : rawCourses.length > 0,
     campus: normalizeCampusState(value.campus),
     inbox: normalizeInformationInbox(value.inbox),
+    planner: normalizePlanner(value.planner),
     displayPreferences: normalizeDisplayPreferences(value.displayPreferences),
   };
 }
@@ -4496,7 +4525,9 @@ function hasMeaningfulState(state: SavedState) {
     || campus.gpaProfile.plans.length
     || campus.degreePlan.categories.length
     || state.inbox?.records.length
-    || state.inbox?.catalogProfile,
+    || state.inbox?.catalogProfile
+    || state.planner?.todos.length
+    || state.planner?.events.length,
   );
 }
 

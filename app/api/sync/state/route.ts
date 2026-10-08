@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { normalizePlanner, normalizeChecklist } from "../../../planner-model";
 import { queryAll, queryOne, withTransaction } from "@/lib/server/database";
 import { inspectStoredObject, objectStore, storedObjectSize } from "@/lib/server/object-store";
 import { committedPdfObjectKey, stagingPdfPrefix } from "@/lib/server/pdf-transfer";
@@ -450,6 +451,12 @@ function validStateShape(value: unknown): value is Record<string, unknown> {
   if (!Array.isArray(state.courses) || !Array.isArray(state.sessions) || !Array.isArray(state.memos)) return false;
   if (state.courses.length > 5000 || state.sessions.length > 20000 || state.memos.length > 100000) return false;
   if (state.campus !== undefined && (!state.campus || typeof state.campus !== "object" || Array.isArray(state.campus))) return false;
+  try {
+    normalizePlanner(state.planner);
+    for (const memo of state.memos) {
+      if (memo && typeof memo === "object") normalizeChecklist((memo as { checklist?: unknown }).checklist);
+    }
+  } catch { return false; }
   return true;
 }
 
