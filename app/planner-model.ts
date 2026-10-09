@@ -7,10 +7,10 @@ export type PersonalEvent = { id: string; title: string; start: string; end: str
 export type PlannerState = { version: 1; todos: PersonalTodo[]; events: PersonalEvent[] };
 export type PlannerCourse = { id: string; title: string; term: string; weekday: number | null; period: number | null; deletedAt?: string | null; archivedAt?: string | null; code?: string };
 export type PlannerMemo = { id: string; courseId: string; sessionId: string; text: string; tags: string[]; page: number | null; checklist?: ChecklistItem[]; deletedAt?: string | null };
-export type PlannerSession = { id: string; courseId: string; sessionNumber: string; title: string; deletedAt?: string | null };
+export type PlannerSession = { id: string; courseId: string; sessionNumber: string; title: string; scheduledOn?: string; deletedAt?: string | null };
 export type PlannerInput = { courses: PlannerCourse[]; sessions: PlannerSession[]; memos: PlannerMemo[]; campus: CampusState; planner: PlannerState; inbox: InformationInbox };
 export type TodoRow = { id: string; source: 'memo' | 'personal' | 'assignment' | 'study'; sourceId: string; itemId: string; title: string; done: boolean; due: string; priority: boolean; workAt: string; tags: string[]; courseId: string; courseTitle: string; term: string; sessionTitle: string; page: number | null };
-export type CalendarEntry = { id: string; title: string; kind: 'todo' | 'work' | 'assignment' | 'exam' | 'study' | 'class' | 'event' | 'university'; at: string; end?: string; time: string; done: boolean; todoId?: string; sourceId?: string; url?: string; courseId?: string; detail: string };
+export type CalendarEntry = { id: string; title: string; kind: 'todo' | 'work' | 'assignment' | 'exam' | 'study' | 'class' | 'session' | 'event' | 'university'; at: string; end?: string; time: string; done: boolean; todoId?: string; sourceId?: string; url?: string; courseId?: string; sessionId?: string; detail: string };
 export const EMPTY_PLANNER: PlannerState = { version: 1, todos: [], events: [] };
 export type HomeLayout = { todo: boolean; timetable: boolean; todoFirst: boolean };
 export function normalizeHomeLayout(value: unknown): HomeLayout {
@@ -29,6 +29,14 @@ export function isPlannerDate(value: unknown, empty = true): value is string {
   if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== day) return false;
   if (value.length > 10 && (!Number.isFinite(Date.parse(value)) || Number(value.slice(11, 13)) > 23 || Number(value.slice(14, 16)) > 59)) return false;
   return true;
+}
+export function normalizeSessionDay(value: unknown): string {
+  if (value === undefined || value === '') return '';
+  if (typeof value !== 'string' || value.length !== 10 || !isPlannerDate(value, false)) throw new Error('授業日が不正です。元データは変更していません。');
+  return value;
+}
+export function memoContentText(memo: Pick<PlannerMemo, 'text' | 'checklist'>) {
+  return [memo.text, ...(memo.checklist ?? []).filter(item => !item.deletedAt).map(item => item.text)].filter(text => text.trim()).join(' · ');
 }
 function date(v: unknown) { if (v === undefined) return ''; if (!isPlannerDate(v)) throw new Error('ToDo・予定の日付が不正です。'); return v; }
 function unique<T extends { id: string }>(rows: T[]) { if (new Set(rows.map(v => v.id)).size !== rows.length) throw new Error('ToDo・予定のIDが重複しています。'); return rows; }
@@ -109,6 +117,12 @@ export function calendarEntries(state: PlannerInput, month: string, term: string
     const course = state.courses.find(c => c.id === exam.courseId && !c.deletedAt);
     if (course && (term === 'all' || course.term === term)) push({ id: `exam:${exam.id}`, title: exam.title, kind: 'exam', at: exam.datetime, done: false, courseId: course.id, detail: `${course.title} · ${exam.location}` });
   }
+  for (const session of state.sessions) {
+    const course = state.courses.find(c => c.id === session.courseId && !c.deletedAt);
+    if (session.deletedAt || !session.scheduledOn || !course || (term !== 'all' && course.term !== term)) continue;
+    const day = normalizeSessionDay(session.scheduledOn);
+    push({ id: `session:${session.id}`, title: `${course.title} · 第${session.sessionNumber}回`, kind: 'session', at: day, done: false, courseId: course.id, sessionId: session.id, detail: session.title });
+  }
   for (const event of state.planner.events) if (!event.deletedAt) push({ id: `event:${event.id}`, title: event.title, kind: 'event', at: event.start, end: event.end, done: false, sourceId: event.id, detail: event.note });
   for (const record of state.inbox.records) {
     const item = record.item;
@@ -137,6 +151,7 @@ export function calendarEntries(state: PlannerInput, month: string, term: string
       const override = rules.find(item => typeof item.extensions?.['x-class-weekday'] === 'number' && inRange(item));
       const actualWeekday = override ? Number(override.extensions?.['x-class-weekday']) : weekday;
       if (course.weekday !== actualWeekday) continue;
+      if (result.some(entry => entry.kind === 'session' && entry.courseId === course.id && entry.at === key)) continue;
       push({ id: `class:${course.id}:${key}`, title: course.title, kind: 'class', at: `${key}T${times[course.period]}`, done: false, courseId: course.id, detail: `${override ? '学年暦の曜日変更' : '通常時間割'} · ${course.period}限` });
     }
   }

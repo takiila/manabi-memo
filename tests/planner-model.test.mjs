@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { normalizeChecklist, normalizePlanner, projectTodos, homeTodos, calendarEntries, patchChecklist, mergePlanner, normalizeHomeLayout } from '../app/planner-model.ts';
+import { normalizeChecklist, normalizePlanner, projectTodos, homeTodos, calendarEntries, patchChecklist, mergePlanner, normalizeHomeLayout, normalizeSessionDay, memoContentText } from '../app/planner-model.ts';
 import { EMPTY_CAMPUS_STATE } from '../app/campus-model.ts';
 
 const item = { id: 'check1', text: '証明を復習', done: false, registered: true, due: '2026-10-09', priority: false, workAt: '', deletedAt: null };
@@ -102,4 +102,27 @@ test('時差付き予定の開始だけ編集しても、サーバー側の日�
     process.env.TZ='UTC';
     assert.doesNotThrow(()=>normalizePlanner({version:1,todos:[],events:[{id:'e',title:'予定',...dates,note:'',deletedAt:null}]}));
   } finally { process.env.TZ = previous; }
+});
+
+
+test('チェック項目だけの付箋を表示し、削除済み項目は検索本文に含めない', () => {
+  assert.equal(memoContentText({ text: '', checklist: [item] }), item.text);
+  assert.equal(memoContentText({ text: '', checklist: [{ ...item, deletedAt: '2026-10-09T00:00:00Z' }] }), '');
+});
+test('旧ノートの授業日は未指定、不正な日付・日時は拒否する', () => {
+  assert.equal(normalizeSessionDay(undefined), '');
+  assert.equal(normalizeSessionDay('2026-10-09'), '2026-10-09');
+  for (const day of ['2026-02-30', '2026-10-09T12:00', null, 42]) assert.throws(() => normalizeSessionDay(day));
+});
+test('指定した授業日から同じ授業回を参照し、通常時間割との重複・削除済みノートを表示しない', () => {
+  const input = { ...state, sessions: [{ ...state.sessions[0], scheduledOn: '2026-10-09' }] };
+  const entries = calendarEntries(input, '2026-10', course.term);
+  const dated = entries.filter(e => e.kind === 'session');
+  assert.equal(dated.length, 1);
+  assert.equal(dated[0].sessionId, 's');
+  assert.equal(dated[0].at, '2026-10-09');
+  assert.equal(dated[0].time, '');
+  assert.equal(entries.some(e => e.kind === 'class' && e.at.startsWith('2026-10-09')), false);
+  for (const key of ['sessions', 'courses']) assert.equal(calendarEntries({ ...input, [key]: input[key].map(row => ({ ...row, deletedAt: '2026-10-09T00:00:00Z' })) }, '2026-10', course.term).some(e => e.kind === 'session'), false);
+  assert.equal(calendarEntries(input, '2026-10', '別の学期').some(e => e.kind === 'session'), false);
 });

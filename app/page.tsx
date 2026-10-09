@@ -6,7 +6,7 @@ import { PlannerPanel } from "./planner-panel";
 import { PlannerHome } from "./planner-home";
 import { MemoChecklist } from "./memo-checklist";
 import { CourseMemoPanel } from "./course-memo-panel";
-import { EMPTY_PLANNER, normalizePlanner, normalizeChecklist, patchChecklist, projectTodos, type PlannerState, type ChecklistItem, type TodoRow } from "./planner-model";
+import { EMPTY_PLANNER, memoContentText, normalizeSessionDay, normalizePlanner, normalizeChecklist, patchChecklist, projectTodos, type PlannerState, type ChecklistItem, type TodoRow } from "./planner-model";
 import { CourseTransferPanel } from "./course-transfer-panel";
 import { UniversityInbox } from "./university-inbox";
 import { TimetableCatalogDialog } from "./timetable-catalog-dialog";
@@ -157,6 +157,7 @@ type Course = CourseInfo & {
 type CourseInput = Omit<Course, "id" | "createdAt">;
 
 type SessionRecord = {
+  scheduledOn?: string;
   id: string;
   courseId: string;
   course: string;
@@ -302,7 +303,7 @@ const PREVIOUS_STATE_KEYS = [
   "manabi-memo-state-v2",
 ];
 const LEGACY_STATE_KEY = "manabi-memo-state-v1";
-const CURRENT_SCHEMA_VERSION = 14;
+const CURRENT_SCHEMA_VERSION = 15;
 const DEFAULT_TERM = defaultAcademicTerm();
 const weekdays = [
   { value: 1, short: "月", label: "月曜日" },
@@ -668,7 +669,7 @@ export default function HomePage() {
 
   const filteredMemos = useMemo(
     () => activeMemos.filter((memo) => {
-      if (!memo.text.trim() && !memo.checklist?.some(item => item.text.trim())) return false;
+      if (!memoContentText(memo)) return false;
       const course = activeCourses.find((item) => item.id === memo.courseId);
       const normalizedQuery = reviewQuery.trim().toLocaleLowerCase("ja-JP");
       const matchesTerm = reviewTerm === "すべて" || course?.term === reviewTerm;
@@ -1653,7 +1654,7 @@ export default function HomePage() {
 
         <main className={view === "workspace" ? "workspace-main" : ""}>
           {view === "inbox" && <UniversityInbox inbox={inbox} courses={courses} disabled={!autoSaveEnabled || Boolean(loadError) || saveStatus === "loading" || saveStatus === "conflict" || saveStatus === "error"} onChange={setInbox} onImport={importInboxCourses} />}
-          {view === "planner" && <PlannerPanel state={plannerInput} disabled={plannerDisabled} onPatch={patchTodo} onPlanner={setPlanner} onMemo={id => { const memo = activeMemos.find(m => m.id === id); if (memo) openMemoOrigin(memo); }} onCourse={openCourseFromTimetable} />}
+          {view === "planner" && <PlannerPanel onSession={id => { const session = activeSessions.find(s => s.id === id); if (session) void openSession(session); }} state={plannerInput} disabled={plannerDisabled} onPatch={patchTodo} onPlanner={setPlanner} onMemo={id => { const memo = activeMemos.find(m => m.id === id); if (memo) openMemoOrigin(memo); }} onCourse={openCourseFromTimetable} />}
           {view === "start" && (
             <PlannerHome rows={todoRows} onOpen={() => setView("planner")}><StartView
               courses={activeCourses}
@@ -1694,7 +1695,7 @@ export default function HomePage() {
               nextAssignment={campus.assignments.filter((item) => item.courseId === selectedCourse.id && item.status !== "done").sort((a, b) => a.dueISO.localeCompare(b.dueISO))[0]}
               nextExam={campus.exams.filter((item) => item.courseId === selectedCourse.id).sort((a, b) => a.datetime.localeCompare(b.datetime))[0]}
               onOpenCampus={() => setView("campus")}
-            /><CourseMemoPanel memos={activeMemos.filter(m => m.courseId === selectedCourse.id)} sessions={activeSessions.filter(s => s.courseId === selectedCourse.id)} disabled={plannerDisabled} onPatch={(id, checklist) => updateMemo(id, { checklist })} onOpen={id => { const memo = activeMemos.find(m => m.id === id); if (memo) openMemoOrigin(memo); }} /></>
+            /><CourseMemoPanel onSchedule={(id, day) => { if (!plannerDisabled) setSessions(current => current.map(session => session.id === id ? { ...session, scheduledOn: normalizeSessionDay(day), updatedAt: new Date().toISOString() } : session)); }} memos={activeMemos.filter(m => m.courseId === selectedCourse.id)} sessions={activeSessions.filter(s => s.courseId === selectedCourse.id)} disabled={plannerDisabled} onPatch={(id, checklist) => updateMemo(id, { checklist })} onOpen={id => { const memo = activeMemos.find(m => m.id === id); if (memo) openMemoOrigin(memo); }} /></>
           )}
 
           {view === "campus" && campusVisible && (
@@ -3738,7 +3739,7 @@ function ReviewView({
       </header>
       <div className="review-kind-switch" role="tablist" aria-label="見返す内容">
         <button type="button" role="tab" aria-selected={reviewKind === "notes"} className={reviewKind === "notes" ? "active" : ""} onClick={() => setReviewKind("notes")}><NotebookPen size={18} /><span><strong>ノート</strong><small>本文・PDFから探す</small></span><b>{sessions.length}</b></button>
-        <button type="button" role="tab" aria-selected={reviewKind === "memos"} className={reviewKind === "memos" ? "active" : ""} onClick={() => setReviewKind("memos")}><StickyNote size={18} /><span><strong>付箋</strong><small>大切な箇所を見返す</small></span><b>{allMemos.filter((memo) => memo.text.trim()).length}</b></button>
+        <button type="button" role="tab" aria-selected={reviewKind === "memos"} className={reviewKind === "memos" ? "active" : ""} onClick={() => setReviewKind("memos")}><StickyNote size={18} /><span><strong>付箋</strong><small>大切な箇所を見返す</small></span><b>{allMemos.filter((memo) => memoContentText(memo)).length}</b></button>
       </div>
       {reviewKind === "notes" ? (
         <NoteReviewPanel courses={courses} sessions={sessions} state={noteReviewState} onChange={setNoteReviewState} memoCount={memoCount} onOpen={onOpenNote} onEdit={onEditNote} onDelete={onDeleteNote} />
@@ -3891,7 +3892,7 @@ function MemoReviewPanel({
                   }
                 }}>
                   <div className="sticky-tags">{memo.tags.map((item) => <span key={item}>{item}</span>)}</div>
-                  <p>{concealed ? "内容を思い出してから、ここを押して答え合わせ" : memo.text}</p>
+                  <p>{concealed ? "内容を思い出してから、ここを押して答え合わせ" : memoContentText(memo)}</p>
                   {!concealed && latestReflection && (
                     <div className="review-reflection">
                       <span>{reflectionStatusLabel(latestReflection.status)}</span>
@@ -4158,6 +4159,7 @@ function normalizeSavedState(value: SavedState) {
     const pdfReference = normalizePdfReferenceFields(session, hasPdf, fileName, pageCount);
     return {
       ...session,
+      scheduledOn: normalizeSessionDay(session.scheduledOn),
       courseId: course.id,
       course: course.title,
       fileName,
