@@ -12,10 +12,10 @@ export type PlannerInput = { courses: PlannerCourse[]; sessions: PlannerSession[
 export type TodoRow = { id: string; source: 'memo' | 'personal' | 'assignment' | 'study'; sourceId: string; itemId: string; title: string; done: boolean; due: string; priority: boolean; workAt: string; tags: string[]; courseId: string; courseTitle: string; term: string; sessionTitle: string; page: number | null };
 export type CalendarEntry = { id: string; title: string; kind: 'todo' | 'work' | 'assignment' | 'exam' | 'study' | 'class' | 'session' | 'event' | 'university'; at: string; end?: string; time: string; done: boolean; todoId?: string; sourceId?: string; url?: string; courseId?: string; sessionId?: string; detail: string };
 export const EMPTY_PLANNER: PlannerState = { version: 1, todos: [], events: [] };
-export type HomeLayout = { todo: boolean; timetable: boolean; todoFirst: boolean };
+export type HomeLayout = { todo: boolean; events: boolean; timetable: boolean; todoFirst: boolean };
 export function normalizeHomeLayout(value: unknown): HomeLayout {
   const v = value && typeof value === 'object' ? value as Partial<HomeLayout> : {};
-  return { todo: v.todo !== false, timetable: v.timetable !== false, todoFirst: v.todoFirst !== false };
+  return { todo: v.todo !== false, events: v.events !== false, timetable: v.timetable !== false, todoFirst: v.todoFirst !== false };
 }
 function record(v: unknown): v is Record<string, unknown> { return Boolean(v && typeof v === 'object' && !Array.isArray(v)); }
 function string(v: unknown, limit = 10000) { if (typeof v !== 'string' || v.length > limit) throw new Error('ToDo・予定の保存形式を確認できません。元データは変更していません。'); return v; }
