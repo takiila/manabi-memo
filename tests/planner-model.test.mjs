@@ -148,5 +148,5 @@ test('週間表示で重複・同時刻・短時間・離れた予定のクリ�
   assert.equal(timedRange(event('short', '13:00', '13:05'), '2026-10-12').end, 13 * 60 + 40);
   assert.equal(timedRange(data[0], '2026-10-13'), null);
   assert.deepEqual(layoutTimedWeekEntries([event('same1','14:00','14:30'),event('same2','14:00','14:30')], '2026-10-12').map(v=>v.lane), [0,1]);
-  assert.deepEqual(layoutTimedWeekEntries([event('first','14:00','14:30'),event('second','14:30','15:00')], '2026-10-12').map(v=>v.laneCount), [1,1]);
+  assert.deepEqual(layoutTimedWeekEntries([event('first','14:00','14:30'),event('second','14:45','15:15')], '2026-10-12').map(v=>v.laneCount), [1,1]);
 });
