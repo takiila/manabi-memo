@@ -13,6 +13,7 @@ import {
   signUpWithEmail,
 } from "./firebase-auth-client";
 import { loadAllPdfs } from "./local-files";
+import { AuthConfigError } from "./firebase-config-client";
 import { mayRefreshSync, sameSyncSnapshot, SyncOperationScope } from "./sync-refresh-model";
 import { decideSyncPlan, type LocalSyncMeta } from "./sync-model";
 import { referencesForSync, referenceSyncFingerprint } from "./reference-sync-model";
@@ -74,6 +75,8 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
   const [authPassword, setAuthPassword] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [authAttempt, setAuthAttempt] = useState(0);
   const [mismatchedAccount, setMismatchedAccount] = useState(false);
   const scopeRef = useRef(new SyncOperationScope());
   const refreshingRef = useRef(false);
@@ -95,6 +98,7 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
       setAccount(undefined); setMeta(null); setCloud(null); setPhase("idle");
       pendingUploadRef.current = null;
       setFirebaseEnabled(enabled);
+      setAuthError("");
       onFirebaseAvailability?.(enabled);
       if (enabled && (!user || !user.emailVerified)) {
         setAccount(null);
@@ -104,7 +108,18 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
         return;
       }
       await loadAccount(enabled, operation);
-    }).then((cleanup) => { unsubscribe = cleanup; });
+    }).then((cleanup) => { if (cancelled) cleanup(); else unsubscribe = cleanup; }).catch(cause => {
+      if (cancelled) return;
+      scopeRef.current.invalidate();
+      setAccount(null);
+      setMeta(null);
+      setCloud(null);
+      setPhase("error");
+      setFirebaseEnabled(null);
+      setAuthError(cause instanceof AuthConfigError ? cause.message : "認証機能を初期化できませんでした。再試行してください。");
+      onFirebaseAvailability?.(null);
+      onCampusEntitlement(null);
+    });
     async function loadAccount(useFirebase: boolean, operation: ReturnType<SyncOperationScope["capture"]>) {
       try {
         const response = useFirebase
@@ -136,7 +151,7 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
       }
     }
     return () => { cancelled = true; scope.invalidate(); unsubscribe(); };
-  }, [onCampusEntitlement, onFirebaseAvailability]);
+  }, [onCampusEntitlement, onFirebaseAvailability, authAttempt]);
 
   useEffect(() => {
     if (!hydrated || !localReady || !account || !meta?.enabled || phase !== "idle") return;
@@ -584,7 +599,7 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
     setPanelOpen(true);
   }
 
-  const label = account === undefined ? "アカウント確認中" : !account ? "ログイン・同期" : phase === "synced" ? "クラウド同期済み" : phase === "offline" ? "オフライン" : meta?.enabled ? "同期を確認" : "アカウント・同期";
+  const label = authError ? "認証接続エラー" : account === undefined ? "アカウント確認中" : !account ? "ログイン・同期" : phase === "synced" ? "クラウド同期済み" : phase === "offline" ? "オフライン" : meta?.enabled ? "同期を確認" : "アカウント・同期";
   const statusIcon = phase === "syncing" || phase === "checking" ? <LoaderCircle className="spin" size={18} /> : phase === "synced" ? <Check size={18} /> : phase === "offline" ? <CloudOff size={18} /> : <Cloud size={18} />;
 
   return <>
@@ -594,7 +609,11 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
     {panelOpen && <div className="modal-backdrop account-sync-backdrop" role="presentation" onMouseDown={() => setPanelOpen(false)}>
       <section className="account-sync-panel" role="dialog" aria-modal="true" aria-labelledby="account-sync-title" onMouseDown={(event) => event.stopPropagation()}>
         <header><div><p className="eyebrow">ACCOUNT & SYNC BETA</p><h2 id="account-sync-title">アカウントとクラウド同期</h2></div><button type="button" onClick={() => setPanelOpen(false)} aria-label="閉じる"><X size={19} /></button></header>
-        {account === undefined || firebaseEnabled === null ? <div className="account-sync-loading"><LoaderCircle className="spin" size={24} /> ログイン状態を確認しています</div> : !account && firebaseEnabled ? <div className="account-signin-card firebase-signin-card">
+        {authError ? <div className="account-signin-card" role="alert">
+          <span><AlertTriangle size={24} /></span><h3>認証サービスに接続できません</h3>
+          <p>{authError}</p><p>端末内のノート・付箋・PDFはそのまま利用できます。ログイン・同期は再接続まで停止しています。</p>
+          <button type="button" className="account-primary" onClick={() => { setAuthError(""); setAuthAttempt(count => count + 1); }}>再試行</button>
+        </div> : account === undefined || firebaseEnabled === null ? <div className="account-sync-loading"><LoaderCircle className="spin" size={24} /> ログイン状態を確認しています</div> : !account && firebaseEnabled ? <div className="account-signin-card firebase-signin-card">
           <span><UserRound size={24} /></span><h3>同じ学習環境を、PCとスマートフォンで</h3><p>時間割、講義ノート、付箋と資料名・ページ番号を端末間で同期できます。PDF本体と抽出本文は端末内だけに残します。ログインだけでは同期を開始しません。</p>
           <button className="account-google" type="button" onClick={() => void googleSignIn()} disabled={authBusy}><LogIn size={18} /> Googleで続ける</button>
           <div className="account-auth-divider"><span>または</span></div>
@@ -607,7 +626,7 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
           {authMode === "signin" && <button className="account-text-button" type="button" onClick={() => void resetPassword()} disabled={authBusy}>パスワードを忘れた場合</button>}
           {authMessage && <p className="account-auth-message" role="status">{authMessage}</p>}
         </div> : !account ? <div className="account-signin-card">
-          <span><UserRound size={24} /></span><h3>アカウント機能は未設定です</h3><p>Firebaseの公開設定値を.env.localへ追加すると、Googleまたはメールアドレスでログインできます。端末内のノート・PDF・Campus Musterは設定前も利用できます。</p>
+          <span><UserRound size={24} /></span><h3>この環境ではアカウント機能を利用できません</h3><p>ログイン機能は運用者による設定が必要です。端末内のノート・PDF・付箋は引き続き利用できます。</p>
         </div> : <>
           <div className="account-profile"><span><UserRound size={20} /></span><div><strong>{account.displayName}</strong><small>{account.email}</small></div>{firebaseEnabled ? <button type="button" onClick={() => void logout()}>ログアウト</button> : <a href="/signout-with-chatgpt?return_to=%2F">ログアウト</a>}</div>
           {firebaseEnabled && legacyLinkAvailable && <div className="legacy-account-link"><strong>以前のChatGPT同期データがある場合</strong><p>メールアドレスだけでは自動統合しません。旧アカウントでも本人確認したあと、明示的に連携します。</p><button type="button" onClick={() => void linkLegacyAccount()} disabled={authBusy}>確認済みの旧アカウントを連携</button>{authMessage && <p className="account-auth-message" role="status">{authMessage}</p>}</div>}
