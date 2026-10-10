@@ -344,6 +344,7 @@ export default function HomePage() {
   const [tutorialSeen, setTutorialSeen] = useState(false);
   const [campus, setCampus] = useState<CampusState>(EMPTY_CAMPUS_STATE);
   const [planner, setPlanner] = useState<PlannerState>(EMPTY_PLANNER);
+  const [plannerStartTab, setPlannerStartTab] = useState<"todo" | "events">("todo");
   const [checklistMemoId, setChecklistMemoId] = useState<string | null>(null);
   const [inbox, setInbox] = useState<InformationInbox>(EMPTY_INFORMATION_INBOX);
   const [displayPreferences, setDisplayPreferences] = useState<DisplayPreferences>(DEFAULT_DISPLAY_PREFERENCES);
@@ -1657,9 +1658,13 @@ export default function HomePage() {
 
         <main className={view === "workspace" ? "workspace-main" : ""}>
           {view === "inbox" && <UniversityInbox inbox={inbox} courses={courses} disabled={!autoSaveEnabled || Boolean(loadError) || saveStatus === "loading" || saveStatus === "conflict" || saveStatus === "error"} onChange={setInbox} onImport={importInboxCourses} />}
-          {view === "planner" && <PlannerPanel onSession={id => { const session = activeSessions.find(s => s.id === id); if (session) void openSession(session); }} state={plannerInput} disabled={plannerDisabled} onPatch={patchTodo} onPlanner={setPlanner} onMemo={id => { const memo = activeMemos.find(m => m.id === id); if (memo) openMemoOrigin(memo); }} onCourse={openCourseFromTimetable} />}
+          {view === "planner" && <PlannerPanel key={plannerStartTab} initialTab={plannerStartTab} onSession={id => { const session = activeSessions.find(s => s.id === id); if (session) void openSession(session); }} state={plannerInput} disabled={plannerDisabled} onPatch={patchTodo} onPlanner={setPlanner} onMemo={id => { const memo = activeMemos.find(m => m.id === id); if (memo) openMemoOrigin(memo); }} onCourse={openCourseFromTimetable} />}
           {view === "start" && (
-            <PlannerHome rows={todoRows} onOpen={() => setView("planner")}><StartView
+            <PlannerHome rows={todoRows} events={planner.events} disabled={plannerDisabled}
+              onOpen={() => { setPlannerStartTab("todo"); setView("planner"); }}
+              onOpenEvents={() => { setPlannerStartTab("events"); setView("planner"); }}
+              onAddTodo={todo => setPlanner(previous => ({ ...previous, todos: [...previous.todos, todo] }))}
+              onAddEvent={event => setPlanner(previous => ({ ...previous, events: [...previous.events, event] }))}><StartView
               courses={activeCourses}
               terms={terms}
               todayDay={hydrated ? new Date().getDay() : 0}
