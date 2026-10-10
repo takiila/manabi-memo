@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import "./planner-week.css";
 import OfflineReady from "./offline-ready";
 
 export const metadata: Metadata = {
