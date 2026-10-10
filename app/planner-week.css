@@ -3,7 +3,7 @@
 .planner-week-controls { display:flex; align-items:center; gap:8px; margin:0 0 12px; flex-wrap:wrap; }
 .planner-week-controls strong { padding:0 6px; }
 .planner-week-scroll { overflow-x:auto; border:1px solid #dde2d9; border-radius:12px; background:#fffefa; margin:12px 0 20px; }
-.planner-week-head,.planner-week-untimed,.planner-week-hours { display:grid; grid-template-columns:64px repeat(7,minmax(112px,1fr)); min-width:850px; }
+.planner-week-head,.planner-week-untimed,.planner-week-hours { display:grid; grid-template-columns:64px repeat(7,minmax(140px,1fr)); min-width:1044px; }
 .planner-week-head { position:sticky; top:0; z-index:2; background:#f6f8f3; }
 .planner-week-head > span,.planner-week-untimed > small,.planner-class-head > span { font-size:11px; color:#68766b; padding:12px 5px; }
 .planner-week-head > button,.planner-class-head > button { border:0; border-left:1px solid #dfe5d9; border-radius:0; background:transparent; padding:8px 4px; text-align:center; font-size:13px; }
@@ -23,7 +23,7 @@
 .planner-week-gutter { position:relative; background:#f8f9f5; }
 .planner-week-gutter small { position:absolute; left:4px; font-size:10px; color:#657565; transform:translateY(-5px); }
 .planner-week-time-column { border-left:1px solid #e2e7df; position:relative; background:repeating-linear-gradient(to bottom,transparent 0,transparent 53px,#e8ece5 53px,#e8ece5 54px); }
-.planner-week-timed { position:absolute; left:2px; right:2px; min-height:32px; z-index:1; }
+.planner-week-timed { position:absolute; min-height:28px; right:auto; z-index:1; }
 .planner-week-timed .planner-week-chip { height:100%; margin:0; overflow:hidden; }
 .planner-class-head,.planner-class-row { display:grid; grid-template-columns:64px repeat(6,minmax(120px,1fr)); min-width:790px; }
 .planner-class-head { background:#f6f8f3; }
@@ -36,3 +36,6 @@
   .planner-view-switch { gap:4px; }
   .planner-view-switch button { flex:1; padding:7px 5px; font-size:11px; }
 }
+
+.planner-week-chip:focus-visible { outline:2px solid #245c40; outline-offset:1px; }
+.planner-week-timed .planner-week-chip { min-width:0; }
