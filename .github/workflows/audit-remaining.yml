@@ -32,3 +32,18 @@ jobs:
             }));
           }
           NODE
+      - name: Generate compatible indirect dependency updates (never force majors)
+        run: npm audit fix --package-lock-only --ignore-scripts || true
+      - name: Emit candidate manifests for review
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          for (const path of ['package.json', 'package-lock.json']) {
+            console.log('SAFE_FIX_BEGIN ' + path);
+            const encoded = fs.readFileSync(path).toString('base64');
+            for (let i = 0; i < encoded.length; i += 2048) {
+              console.log('SAFE_FIX_CHUNK ' + path + ' ' + encoded.slice(i, i + 2048));
+            }
+            console.log('SAFE_FIX_END ' + path);
+          }
+          NODE
