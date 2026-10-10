@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { buildQuickEntry, type QuickEntryDraft } from './planner-quick-entry-model';
 import type { PersonalEvent, PersonalTodo } from './planner-model';
 
@@ -25,7 +25,7 @@ export function PlannerQuickEntry({ disabled, onAddEvent, onAddTodo }: {
     setError('');
     setMessage('');
   }
-  function submit(e: React.FormEvent<HTMLFormElement>) {
+  function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (disabled) return;
     try {
@@ -40,10 +40,8 @@ export function PlannerQuickEntry({ disabled, onAddEvent, onAddTodo }: {
       setError(cause instanceof Error ? cause.message : '登録内容を確認してください。');
     }
   }
-  return <section className="planner-quick-entry planner-home-card" aria-label="予定・資格勉強をすぐ登録">
-    <div className="planner-heading">
-      <div><small>ゼミ・通院・資格勉強にも</small><h2>予定・ToDoをすぐ登録</h2></div>
-    </div>
+  return <details className="planner-quick-entry planner-home-card">
+    <summary>＋ 予定・ToDoをすぐ登録（ゼミ・通院・資格勉強）</summary>
     <div className="planner-quick-shortcuts">
       <button type="button" disabled={disabled} onClick={() => selectTemplate('event', 'ゼミガイダンス')}>＋ ゼミガイダンス</button>
       <button type="button" disabled={disabled} onClick={() => selectTemplate('event', '通院')}>＋ 通院</button>
@@ -73,5 +71,5 @@ export function PlannerQuickEntry({ disabled, onAddEvent, onAddTodo }: {
       {error && <p role="alert">{error}</p>}
       <button type="submit" disabled={disabled || !draft.title.trim() || (draft.kind === 'event' && !draft.day)}>追加する</button>
     </form>}
-  </section>;
+  </details>;
 }
