@@ -128,3 +128,26 @@ test('週間表示をまたぐ月境界の日付を保持する', async () => {
   assert.equal(mondayOf('2026-11-01'), '2026-10-26');
   assert.deepEqual(datesInWeek('2026-11-01'), ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01']);
 });
+
+test('週間タイムラインの重複予定は別々の操作領域を持ち元データを開ける', async () => {
+  const { PlannerWeekView } = await import('../app/planner-week-view.tsx');
+  const entries = [
+    { id:'a', title:'講義のあとに打ち合わせ',kind:'event',at:'2026-10-12T13:00',end:'2026-10-12T14:00',time:'13:00',done:false,sourceId:'a',detail:'' },
+    { id:'b', title:'13時15分の予定',kind:'event',at:'2026-10-12T13:15',end:'2026-10-12T14:15',time:'13:15',done:false,sourceId:'b',detail:'' },
+    { id:'c', title:'短い確認',kind:'event',at:'2026-10-12T13:20',end:'2026-10-12T13:25',time:'13:20',done:false,sourceId:'c',detail:'' },
+  ];
+  const clicked=[];
+  const view = mount(h(PlannerWeekView,{ entries,selectedDay:'2026-10-12',mode:'week',onDay:noop,onOpen: entry=>clicked.push(entry.id) }));
+  try {
+    const chips=[...view.host.querySelectorAll('.planner-week-timed')];
+    assert.equal(chips.length,3);
+    assert.deepEqual(chips.map(el=>el.getAttribute('data-lane')),['0','1','2']);
+    assert.ok(chips.every(el=>el.getAttribute('data-lane-count')==='3'));
+    for(const chip of chips) {
+      const btn=chip.querySelector('button');
+      assert.ok(btn?.getAttribute('aria-label')?.includes('予定') || btn?.getAttribute('aria-label')?.includes('確認') || btn?.getAttribute('aria-label')?.includes('打ち合わせ'));
+      click(btn);
+    }
+    assert.deepEqual(clicked,['a','b','c']);
+  } finally { view.close(); }
+});
