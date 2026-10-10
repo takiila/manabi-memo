@@ -33,9 +33,9 @@ try {
     if (Date.now() > deadline || server.exitCode !== null) throw new Error(logs.join(""));
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
-  const local = { courses: [], sessions: [{ id: "lecture-1", hasPdf: true, fileName: "lecture.pdf", pageCount: 10, lastPdfPage: 7, pageTexts: ["not uploaded"], topics: [{ title: "not uploaded" }], noteText: "lecture note" }], memos: [{ id: "memo-1", sessionId: "lecture-1", page: 7, text: "page seven memo" }] };
+  const local = { courses: [], sessions: [{ id: "lecture-1", scheduledOn: "2026-10-09", hasPdf: true, fileName: "lecture.pdf", pageCount: 10, lastPdfPage: 7, pageTexts: ["not uploaded"], topics: [{ title: "not uploaded" }], noteText: "lecture note" }], memos: [{ id: "memo-1", sessionId: "lecture-1", page: 7, text: "page seven memo", checklist: [{ id: "check-1", text: "review proof", done: false, registered: true, due: "2026-10-09", priority: true, workAt: "", deletedAt: null }] }], planner: { version: 1, todos: [{ id: "personal-1", text: "review material", done: false, registered: true, due: "", priority: false, workAt: "", deletedAt: null, courseId: "", tags: ["review"] }], events: [{ id: "event-1", title: "appointment", start: "2026-10-10", end: "", note: "", deletedAt: null }] } };
   const cloud = referencesForSync(local, { "lecture-1": "a".repeat(64) });
-  const body = (state, baseRevision = 0, deviceId = "desktop") => JSON.stringify({ baseRevision, schemaVersion: 13, state, pdfIds: [], pdfs: [], deviceId: `test-device-${deviceId}` });
+  const body = (state, baseRevision = 0, deviceId = "desktop") => JSON.stringify({ baseRevision, schemaVersion: 15, state, pdfIds: [], pdfs: [], deviceId: `test-device-${deviceId}` });
   assert.equal((await request("/api/sync/state", { method: "POST", headers, body: body(local) })).status, 400);
   assert.equal((await request("/api/sync/pdf?sessionId=lecture-1", { method: "PUT", headers, body: "PDF" })).status, 403);
   assert.equal((await request("/api/sync/pdf/transfer", { method: "POST", headers, body: "{}" })).status, 403);
@@ -48,11 +48,19 @@ try {
     assert.equal(downloaded.body.state.memos[0].page, 7);
     assert.equal(downloaded.body.state.memos[0].text, "page seven memo");
     assert.deepEqual(downloaded.body.state.sessions[0].pageTexts, []);
+    assert.deepEqual(downloaded.body.state.memos[0].checklist, local.memos[0].checklist);
+    assert.deepEqual(downloaded.body.state.planner, local.planner);
+    assert.equal(downloaded.body.schemaVersion, 15);
+    assert.equal(downloaded.body.state.sessions[0].scheduledOn, "2026-10-09");
     assert.deepEqual(downloaded.body.pdfs, []);
     assert.equal((await request("/api/sync/state", { method: "POST", headers, body: body(cloud, 0, device) })).status, 409);
   }
   assert.equal((await request("/api/sync/state", { headers: { ...headers, "oai-authenticated-user-email": "other@example.test" } })).body.exists, false);
   assert.equal(local.sessions[0].hasPdf, true);
+  const badDay = { ...cloud, sessions: [{ ...cloud.sessions[0], scheduledOn: "2026-02-30" }] };
+  assert.equal((await request("/api/sync/state", { method: "POST", headers, body: body(badDay, 1) })).status, 400);
+  const malformed = { ...cloud, planner: { ...cloud.planner, todos: [{ ...cloud.planner.todos[0], due: "2026-02-30" }] } };
+  assert.equal((await request("/api/sync/state", { method: "POST", headers, body: body(malformed, 1) })).status, 400);
   console.log("Reference-only API: no PDF transfers, page-seven memo shared, revision conflicts and account isolation verified.");
 } finally {
   const exited = new Promise((resolve) => server.once("exit", resolve));

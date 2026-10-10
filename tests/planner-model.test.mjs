@@ -1,0 +1,184 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { register } from 'node:module';
+register('./tsx-loader.mjs', import.meta.url);
+import { normalizeChecklist, normalizePlanner, projectTodos, homeTodos, calendarEntries, patchChecklist, mergePlanner, normalizeHomeLayout, normalizeSessionDay, memoContentText } from '../app/planner-model.ts';
+import { EMPTY_CAMPUS_STATE } from '../app/campus-model.ts';
+
+const item = { id: 'check1', text: '証明を復習', done: false, registered: true, due: '2026-10-09', priority: false, workAt: '', deletedAt: null };
+const course = { id: 'c', title: '数理論理学', term: '2026年度 後期', weekday: 5, period: 2 };
+const memo = { id: 'm', courseId: 'c', sessionId: 's', text: '復習', tags: ['テスト対策'], page: 3, checklist: [item] };
+const state = { courses: [course], sessions: [{ id: 's', courseId: 'c', sessionNumber: '3', title: '証明' }], memos: [memo], campus: EMPTY_CAMPUS_STATE, planner: { version: 1, todos: [], events: [] }, inbox: { records: [] } };
+
+test('旧データは空、不正な新形式は消去せず拒否する', () => {
+  assert.deepEqual(normalizeChecklist(undefined), []);
+  assert.deepEqual(normalizePlanner(undefined), { version: 1, todos: [], events: [] });
+  assert.throws(() => normalizeChecklist([{ ...item, due: '2026-02-30' }]));
+  assert.throws(() => normalizeChecklist([item, item]));
+  assert.throws(() => normalizePlanner({ version: 2, todos: [], events: [] }));
+});
+test('選択登録と解除は同じID・チェック・期限を維持する', () => {
+  const list = patchChecklist([item], item.id, { done: true, registered: false });
+  assert.equal(list[0].id, item.id);
+  assert.equal(list[0].due, item.due);
+  assert.equal(list[0].done, true);
+  assert.equal(projectTodos({ ...state, memos: [{ ...memo, checklist: list }] }).length, 0);
+  assert.equal(projectTodos({ ...state, memos: [{ ...memo, checklist: patchChecklist(list, item.id, { registered: true }) }] })[0].done, true);
+});
+test('削除済みの項目・付箋・授業回・講義を表示せず復元で戻る', () => {
+  for (const key of ['memos', 'sessions', 'courses']) {
+    assert.equal(projectTodos({ ...state, [key]: state[key].map(row => ({ ...row, deletedAt: '2026-10-08T00:00:00Z' })) }).length, 0);
+  }
+  assert.equal(projectTodos({ ...state, memos: [{ ...memo, checklist: [{ ...item, deletedAt: '2026-10-08T00:00:00Z' }] }] }).length, 0);
+  assert.equal(projectTodos(state).length, 1);
+});
+test('ホームは期限切れ・直近7日・優先表示の未完了だけ', () => {
+  const rows = [{ due: '2026-10-01', done: false }, { due: '2026-10-15', done: false }, { due: '2026-10-16', done: false }, { due: '', priority: true, done: false }, { due: '', done: false }, { due: '2026-10-09', done: true }];
+  assert.equal(homeTodos(rows, '2026-10-09').length, 3);
+});
+test('日付のみを時刻未設定で表示、期限なしは出さず、作業日時は締切と別', () => {
+  const checklist = [item, { ...item, id: 'check2', due: '', workAt: '2026-10-10T13:00' }, { ...item, id: 'check3', registered: false }];
+  const entries = calendarEntries({ ...state, courses: [{ ...course, weekday: null }], memos: [{ ...memo, checklist }] }, '2026-10', 'all');
+  const todo = entries.filter(row => row.kind === 'todo' || row.kind === 'work');
+  assert.equal(todo.length, 2);
+  assert.equal(todo[0].at, '2026-10-09');
+  assert.equal(todo[0].time, '');
+  assert.equal(todo[1].kind, 'work');
+  assert.equal(todo[1].time, '13:00');
+});
+test('同一項目を重複生成せず登録解除でカレンダーから消える', () => {
+  assert.equal(calendarEntries(state, '2026-10', course.term).filter(row => row.kind === 'todo').length, 1);
+  assert.equal(calendarEntries({ ...state, memos: [{ ...memo, checklist: [{ ...item, registered: false }] }] }, '2026-10', course.term).filter(row => row.kind === 'todo').length, 0);
+});
+test('バックアップの個人ToDo・予定のID衝突を回避し科目参照を移す', () => {
+  const planner = { version: 1, todos: [{ ...item, courseId: 'c', tags: [] }], events: [{ id: 'e', title: '予定', start: '2026-10-09', end: '', note: '', deletedAt: null }] };
+  const merged = mergePlanner(planner, planner, new Map([['c', 'c-new']]));
+  assert.equal(merged.todos.length, 2);
+  assert.notEqual(merged.todos[0].id, merged.todos[1].id);
+  assert.equal(merged.todos[1].courseId, 'c-new');
+  assert.notEqual(merged.events[0].id, merged.events[1].id);
+});
+test('ホーム設定の旧値を補完し順序重複を除く', () => {
+  assert.deepEqual(normalizeHomeLayout(null), { todo: true, events: true, timetable: true, todoFirst: true });
+  assert.deepEqual(normalizeHomeLayout({ todo: false, timetable: false, todoFirst: false }), { todo: false, events: true, timetable: false, todoFirst: false });
+  assert.equal(normalizeHomeLayout({ events: false }).events, false);
+});
+
+test('学年暦の授業期間・休講・曜日変更を通常時間割へ反映する', () => {
+  const rules = [
+    { id: 'period', title: '後期', data: { starts_at: '2026-10-01', ends_at: '2027-02-01' }, extensions: { 'x-class-calendar': 'teaching_period' } },
+    { id: 'holiday', title: '休講', data: { starts_at: '2026-10-09' }, extensions: { 'x-class-calendar': 'no_class' } },
+    { id: 'swap', title: '月曜日の授業', data: { starts_at: '2026-10-15' }, extensions: { 'x-class-weekday': 1 } },
+  ].map(row => ({ id: row.id, collection: 'calendar', item: { ...row, type: 'event', term: course.term, source: { title: '学年暦' } } }));
+  const input = { ...state, courses: [course, { ...course, id: 'monday', weekday: 1 }], inbox: { records: rules } };
+  const october = calendarEntries(input, '2026-10', course.term);
+  assert.equal(october.filter(e => e.kind === 'class' && e.at.startsWith('2026-10-09')).length, 0);
+  assert.equal(october.find(e => e.kind === 'class' && e.at.startsWith('2026-10-15')).courseId, 'monday');
+  assert.equal(calendarEntries(input, '2027-03', course.term).filter(e => e.kind === 'class').length, 0);
+});
+
+test('添付学年暦の取り込みデータが公開Schemaに準拠し、同じ取り込みを重複させない', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const { parseManabiImport, planManabiImport, applyManabiImport } = await import('../app/manabi-import-model.ts');
+  const pack = parseManabiImport(await readFile(new URL('../examples/gunma-info-2026-academic-calendar.json', import.meta.url), 'utf8'));
+  const initial = { version: 1, records: [] };
+  const plan = planManabiImport(initial, pack);
+  assert.equal(plan.some(r => r.kind === 'blocked'), false);
+  const inbox = applyManabiImport(initial, pack, pack.items.map(i => i.id), pack.items.map(i => i.id), JSON.stringify(initial));
+  assert.equal(planManabiImport(inbox, pack).every(r => r.kind === 'same'), true);
+  const dateRows = calendarEntries({ ...state, inbox }, '2026-10', course.term);
+  assert.equal(dateRows.some(e => e.kind === 'class' && e.at.startsWith('2026-10-12')), false);
+});
+test('ホームの期限判定は時差を含む予定を端末の日付に合わせる', () => {
+  const previous = process.env.TZ; process.env.TZ = 'Asia/Tokyo';
+  try {
+    assert.equal(homeTodos([{done:false,due:'2026-10-15T23:00:00Z'}], '2026-10-09').length, 0);
+  } finally { process.env.TZ = previous; }
+});
+test('時差付き予定の開始だけ編集しても、サーバー側の日時検証を通る', async () => {
+  const { serializeEventDates } = await import('../app/planner-model.ts');
+  const previous = process.env.TZ; process.env.TZ = 'Asia/Tokyo';
+  try {
+    const dates = serializeEventDates('2026-10-09T12:00', '2026-10-09T13:00', {start:'2026-10-09T02:00:00Z',end:'2026-10-09T04:00:00Z'});
+    assert.equal(dates.start, '2026-10-09T03:00:00.000Z');
+    assert.equal(dates.end, '2026-10-09T04:00:00Z');
+    process.env.TZ='UTC';
+    assert.doesNotThrow(()=>normalizePlanner({version:1,todos:[],events:[{id:'e',title:'予定',...dates,note:'',deletedAt:null}]}));
+  } finally { process.env.TZ = previous; }
+});
+
+
+test('チェック項目だけの付箋を表示し、削除済み項目は検索本文に含めない', () => {
+  assert.equal(memoContentText({ text: '', checklist: [item] }), item.text);
+  assert.equal(memoContentText({ text: '', checklist: [{ ...item, deletedAt: '2026-10-09T00:00:00Z' }] }), '');
+});
+test('旧ノートの授業日は未指定、不正な日付・日時は拒否する', () => {
+  assert.equal(normalizeSessionDay(undefined), '');
+  assert.equal(normalizeSessionDay('2026-10-09'), '2026-10-09');
+  for (const day of ['2026-02-30', '2026-10-09T12:00', null, 42]) assert.throws(() => normalizeSessionDay(day));
+});
+test('指定した授業日から同じ授業回を参照し、通常時間割との重複・削除済みノートを表示しない', () => {
+  const input = { ...state, sessions: [{ ...state.sessions[0], scheduledOn: '2026-10-09' }] };
+  const entries = calendarEntries(input, '2026-10', course.term);
+  const dated = entries.filter(e => e.kind === 'session');
+  assert.equal(dated.length, 1);
+  assert.equal(dated[0].sessionId, 's');
+  assert.equal(dated[0].at, '2026-10-09');
+  assert.equal(dated[0].time, '');
+  assert.equal(entries.some(e => e.kind === 'class' && e.at.startsWith('2026-10-09')), false);
+  for (const key of ['sessions', 'courses']) assert.equal(calendarEntries({ ...input, [key]: input[key].map(row => ({ ...row, deletedAt: '2026-10-09T00:00:00Z' })) }, '2026-10', course.term).some(e => e.kind === 'session'), false);
+  assert.equal(calendarEntries(input, '2026-10', '別の学期').some(e => e.kind === 'session'), false);
+});
+
+test('週間表示で重複・同時刻・短時間・離れた予定のクリック領域を分離', async () => {
+  const { layoutTimedWeekEntries, timedRange } = await import('../app/planner-week-layout.ts');
+  const event = (id, start, end) => ({ id, title: id, kind: 'event', at: '2026-10-12T' + start, end: end ? '2026-10-12T' + end : '', time: start, done: false, sourceId: id, detail: '' });
+  const data = [
+    event('A', '13:00', '14:00'),
+    event('B', '13:15', '14:15'),
+    event('C', '13:20', '13:30'),
+    event('D', '15:00', '16:00'),
+    event('E', '15:10', '15:15'),
+    event('F', '17:00', '17:20'),
+  ];
+  const placed = layoutTimedWeekEntries(data, '2026-10-12');
+  assert.equal(placed.length, data.length);
+  assert.deepEqual(new Set(placed.slice(0, 3).map(v => v.lane)).size, 3);
+  assert.ok(placed.slice(0, 3).every(v => v.laneCount === 3));
+  assert.equal(placed.find(v => v.entry.id === 'D').laneCount, 2);
+  assert.equal(placed.find(v => v.entry.id === 'E').laneCount, 2);
+  assert.equal(placed.find(v => v.entry.id === 'F').laneCount, 1);
+  assert.equal(timedRange(event('short', '13:00', '13:05'), '2026-10-12').end, 13 * 60 + 40);
+  assert.equal(timedRange(data[0], '2026-10-13'), null);
+  assert.deepEqual(layoutTimedWeekEntries([event('same1','14:00','14:30'),event('same2','14:00','14:30')], '2026-10-12').map(v=>v.lane), [0,1]);
+  assert.deepEqual(layoutTimedWeekEntries([event('first','14:00','14:30'),event('second','14:45','15:15')], '2026-10-12').map(v=>v.laneCount), [1,1]);
+});
+
+test('ホームのクイック登録はゼミガイダンス・通院・資格勉強を既存データに記録する', async () => {
+  const { buildQuickEntry } = await import('../app/planner-quick-entry-model.ts');
+  const base = { kind: 'event', title: 'ゼミガイダンス', day: '2026-10-15', time: '14:00', endTime: '15:00', due: '', workDay: '', workTime: '', note: '大学内の会場', priority: false, tags: [] };
+  const seminar = buildQuickEntry(base, 'seminar');
+  assert.equal(seminar.kind, 'event');
+  assert.equal(seminar.record.start, '2026-10-15T14:00');
+  assert.equal(seminar.record.end, '2026-10-15T15:00');
+  const hospital = buildQuickEntry({ ...base, title: '通院', day: '2026-10-16', time: '09:30', endTime: '', note: '' }, 'clinic');
+  assert.equal(hospital.record.start, '2026-10-16T09:30');
+  assert.equal(hospital.record.end, '');
+  assert.throws(() => buildQuickEntry({ ...base, endTime: '13:00' }, 'invalid'), /終了時刻/);
+  assert.throws(() => buildQuickEntry({ ...base, day: '' }, 'invalid'), /日付/);
+  const study = buildQuickEntry({ ...base, kind: 'todo', title: ' AWS SAA 勉強 ', day: '', time: '', endTime: '',
+    due: '2026-10-20', workDay: '2026-10-17', workTime: '19:00', priority: true, tags: ['資格勉強', '資格勉強', 'AWS'] }, 'study');
+  assert.equal(study.kind, 'todo');
+  assert.equal(study.record.workAt, '2026-10-17T19:00');
+  assert.equal(study.record.due, '2026-10-20');
+  assert.deepEqual(study.record.tags, ['資格勉強','AWS']);
+  assert.equal(study.record.text, 'AWS SAA 勉強');
+  assert.throws(() => buildQuickEntry({ ...base, kind:'todo', workTime:'19:00' }, 'bad'), /作業時刻/);
+  const personalState = { ...state, planner: normalizePlanner({ version:1, todos:[study.record], events:[seminar.record,hospital.record] }) };
+  const entries = calendarEntries(personalState, '2026-10', 'all');
+  assert.ok(entries.some(e => e.kind === 'event' && e.title === 'ゼミガイダンス' && e.time === '14:00'));
+  assert.ok(entries.some(e => e.kind === 'event' && e.title === '通院' && e.time === '09:30'));
+  assert.ok(entries.some(e => e.kind === 'work' && e.title === 'AWS SAA 勉強' && e.time === '19:00'));
+  assert.ok(entries.some(e => e.kind === 'todo' && e.title === 'AWS SAA 勉強' && e.time === ''));
+  assert.equal(homeTodos(projectTodos(personalState), '2026-10-15').some(t => t.title === 'AWS SAA 勉強'), true);
+});

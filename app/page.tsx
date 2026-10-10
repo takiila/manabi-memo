@@ -1,5 +1,14 @@
 "use client";
 
+import { PlannerDialog } from './planner-dialog';
+import { TagInput } from './planner-tag-input';
+import { PlannerPanel } from "./planner-panel";
+import { PlannerHome } from "./planner-home";
+import { MemoChecklist } from "./memo-checklist";
+import { SessionStartDialog } from "./session-start-dialog";
+import { normalizeSessionNumber, isValidSessionNumber } from "./session-number-model";
+import { CourseMemoPanel } from "./course-memo-panel";
+import { EMPTY_PLANNER, memoContentText, normalizeSessionDay, normalizePlanner, normalizeChecklist, patchChecklist, projectTodos, type PlannerState, type ChecklistItem, type TodoRow } from "./planner-model";
 import { CourseTransferPanel } from "./course-transfer-panel";
 import { UniversityInbox } from "./university-inbox";
 import { TimetableCatalogDialog } from "./timetable-catalog-dialog";
@@ -76,9 +85,6 @@ import { createBackupFile, inspectBackupFile, type InspectedBackup } from "./bac
 import { mergeImportedState, mergeLegacyCampusData } from "./data-migration-model";
 import {
   formatPdfProcessingError,
-  pdfFileWarning,
-  pdfSizeLabel,
-  MAX_PDF_FILE_SIZE_BYTES,
   ProcessedTopic,
   processPdfLocally,
 } from "./pdf-local";
@@ -121,7 +127,7 @@ import {
   type DisplayPreferences,
 } from "./data-safety-model";
 
-type View = "start" | "course" | "review" | "workspace" | "campus" | "inbox" | "settings";
+type View = "start" | "course" | "review" | "workspace" | "campus" | "inbox" | "planner" | "settings";
 type TagScope = "global" | "course";
 type SaveStatus = "loading" | "dirty" | "saving" | "saved" | "error" | "conflict";
 type NoteReviewState = {
@@ -150,6 +156,7 @@ type Course = CourseInfo & {
 type CourseInput = Omit<Course, "id" | "createdAt">;
 
 type SessionRecord = {
+  scheduledOn?: string;
   id: string;
   courseId: string;
   course: string;
@@ -192,6 +199,7 @@ type Reflection = {
 };
 
 type Memo = {
+  checklist?: ChecklistItem[];
   id: string;
   sessionId: string;
   courseId: string;
@@ -229,6 +237,7 @@ type SavedState = {
   tutorialSeen?: boolean;
   campus?: CampusState;
   inbox?: InformationInbox;
+  planner?: PlannerState;
   displayPreferences?: DisplayPreferences;
 };
 
@@ -244,6 +253,7 @@ type NormalizedState = {
   tutorialSeen: boolean;
   campus: CampusState;
   inbox: InformationInbox;
+  planner: PlannerState;
   displayPreferences: DisplayPreferences;
 };
 
@@ -292,7 +302,7 @@ const PREVIOUS_STATE_KEYS = [
   "manabi-memo-state-v2",
 ];
 const LEGACY_STATE_KEY = "manabi-memo-state-v1";
-const CURRENT_SCHEMA_VERSION = 13;
+const CURRENT_SCHEMA_VERSION = 15;
 const DEFAULT_TERM = defaultAcademicTerm();
 const weekdays = [
   { value: 1, short: "月", label: "月曜日" },
@@ -333,6 +343,9 @@ export default function HomePage() {
   const [terms, setTerms] = useState<string[]>([DEFAULT_TERM]);
   const [tutorialSeen, setTutorialSeen] = useState(false);
   const [campus, setCampus] = useState<CampusState>(EMPTY_CAMPUS_STATE);
+  const [planner, setPlanner] = useState<PlannerState>(EMPTY_PLANNER);
+  const [plannerStartTab, setPlannerStartTab] = useState<"todo" | "events">("todo");
+  const [checklistMemoId, setChecklistMemoId] = useState<string | null>(null);
   const [inbox, setInbox] = useState<InformationInbox>(EMPTY_INFORMATION_INBOX);
   const [displayPreferences, setDisplayPreferences] = useState<DisplayPreferences>(DEFAULT_DISPLAY_PREFERENCES);
   const [accountCampusEntitlement, setAccountCampusEntitlement] = useState<boolean | null>(null);
@@ -423,6 +436,7 @@ export default function HomePage() {
     setTutorialSeen(safeState.tutorialSeen);
     setCampus(safeState.campus);
     setInbox(safeState.inbox);
+    setPlanner(safeState.planner);
     setDisplayPreferences(safeState.displayPreferences);
     setActiveTerm(safeState.activeTerm);
     const firstCourseId = safeState.courses.find((course) => !course.archivedAt && !course.deletedAt)?.id ?? safeState.courses.find((course) => !course.deletedAt)?.id ?? "";
@@ -516,7 +530,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!hydrated || !autoSaveEnabled) return;
-    const state: SavedState = { courses, sessions, memos, globalTags, courseTags, courseTemplates, terms, activeTerm, tutorialSeen, campus, inbox, displayPreferences };
+    const state: SavedState = { courses, sessions, memos, globalTags, courseTags, courseTemplates, terms, activeTerm, tutorialSeen, campus, inbox, planner, displayPreferences };
     latestStateRef.current = state;
     const fingerprint = stateFingerprint(state);
     if (fingerprint === lastPersistedFingerprint.current) return;
@@ -546,7 +560,7 @@ export default function HomePage() {
       });
     }, 520);
     return () => window.clearTimeout(saveTimer);
-  }, [activeTerm, autoSaveEnabled, campus, inbox, courseTags, courseTemplates, courses, displayPreferences, globalTags, hydrated, memos, sessions, terms, tutorialSeen]);
+  }, [activeTerm, autoSaveEnabled, campus, inbox, planner, courseTags, courseTemplates, courses, displayPreferences, globalTags, hydrated, memos, sessions, terms, tutorialSeen]);
 
   useEffect(() => {
     if (typeof BroadcastChannel === "undefined") return;
@@ -609,6 +623,17 @@ export default function HomePage() {
   const activeCourses = useMemo(() => activeOnly(courses), [courses]);
   const activeSessions = useMemo(() => activeOnly(sessions).filter((session) => activeCourses.some((course) => course.id === session.courseId)), [activeCourses, sessions]);
   const activeMemos = useMemo(() => activeOnly(memos).filter((memo) => activeSessions.some((session) => session.id === memo.sessionId)), [activeSessions, memos]);
+  const plannerInput = { courses, sessions, memos, campus, inbox, planner };
+  const todoRows = projectTodos(plannerInput);
+  const plannerDisabled = !autoSaveEnabled || Boolean(loadError) || ["loading", "conflict", "error"].includes(saveStatus);
+  function patchTodo(row: TodoRow, patch: Partial<ChecklistItem>) {
+    if (plannerDisabled) return;
+    if (row.source === "memo") setMemos(current => current.map(memo => memo.id === row.sourceId ? { ...memo, checklist: patchChecklist(memo.checklist ?? [], row.itemId, patch) } : memo));
+    if (row.source === "personal") setPlanner(current => ({ ...current, todos: current.todos.map(todo => todo.id === row.itemId ? { ...todo, ...patch, id: todo.id } : todo) }));
+    if (row.source === "assignment") setCampus(current => ({ ...current, assignments: current.assignments.map(item => item.id === row.sourceId ? { ...item, ...(patch.text !== undefined ? { title: patch.text } : {}), ...(patch.due !== undefined ? { dueISO: patch.due } : {}), ...(patch.done !== undefined ? { status: patch.done ? "done" : "todo" } : {}), ...(patch.priority !== undefined ? { importance: patch.priority ? 3 : 2 } : {}) } : item) }));
+    if (row.source === "study") setCampus(current => ({ ...current, studyTasks: current.studyTasks.map(item => item.id === row.sourceId ? { ...item, ...(patch.text !== undefined ? { title: patch.text } : {}), ...(patch.done !== undefined ? { status: patch.done ? "done" : "todo", doneAtISO: patch.done ? new Date().toISOString() : null } : {}) } : item) }));
+  }
+  const checklistMemo = activeMemos.find(memo => memo.id === checklistMemoId);
   const localCampusPreview = localCampusPreviewEnabled();
   const effectiveCampusEntitlement = localCampusPreview ? true : accountCampusEntitlement;
   const campusVisible = localCampusPreview || displayPreferences.campusMusterEnabled;
@@ -644,7 +669,7 @@ export default function HomePage() {
 
   const filteredMemos = useMemo(
     () => activeMemos.filter((memo) => {
-      if (!memo.text.trim()) return false;
+      if (!memoContentText(memo)) return false;
       const course = activeCourses.find((item) => item.id === memo.courseId);
       const normalizedQuery = reviewQuery.trim().toLocaleLowerCase("ja-JP");
       const matchesTerm = reviewTerm === "すべて" || course?.term === reviewTerm;
@@ -652,6 +677,7 @@ export default function HomePage() {
       const matchesTag = reviewTag === "すべて" || memo.tags.includes(reviewTag);
       const searchableText = [
         memo.text,
+        ...(memo.checklist ?? []).filter(item => !item.deletedAt).map(item => item.text),
         memo.course,
         memo.sessionTitle,
         ...memo.tags,
@@ -946,11 +972,12 @@ export default function HomePage() {
     }
   }
 
-  async function startSelectedSession() {
+  async function startSelectedSession(scheduledOn: string) {
     if (!selectedCourse) return;
     const course = selectedCourse.title;
     const sessionNumber = normalizeSessionNumber(selectedSession);
-    if (!isValidSessionNumber(selectedSession) || starting) return;
+    if (!isValidSessionNumber(selectedSession) || starting || plannerDisabled) return;
+    const day = normalizeSessionDay(scheduledOn);
 
     setStarting(true);
     setStartError("");
@@ -958,7 +985,9 @@ export default function HomePage() {
 
     try {
       if (!draftPdf && existingSelection) {
-        await openSession(existingSelection);
+        const updated = { ...existingSelection, scheduledOn: day, updatedAt: new Date().toISOString() };
+        setSessions(current => current.map(session => session.id === updated.id ? updated : session));
+        await openSession(updated);
         return;
       }
 
@@ -1010,6 +1039,7 @@ export default function HomePage() {
         };
       }
 
+      nextSession = { ...nextSession, scheduledOn: day };
       const nextSessions = [nextSession, ...sessions.filter((item) => item.id !== nextSession.id)];
       if (draftPdf) {
         await persistStateAndPdf({ ...currentSavedState(), sessions: nextSessions }, nextSession.id, draftPdf);
@@ -1079,7 +1109,7 @@ export default function HomePage() {
   }
 
   function currentSavedState(): SavedState {
-    return { ...latestStateRef.current, courses, sessions, memos, globalTags, courseTags, courseTemplates, terms, activeTerm, tutorialSeen, campus, inbox, displayPreferences };
+    return { ...latestStateRef.current, courses, sessions, memos, globalTags, courseTags, courseTemplates, terms, activeTerm, tutorialSeen, campus, inbox, planner, displayPreferences };
   }
 
   const handleCampusEntitlement = useCallback((enabled: boolean | null) => {
@@ -1099,7 +1129,8 @@ export default function HomePage() {
     setFirebaseEnabled(enabled);
   }, []);
 
-  async function applyCloudAccountState(value: unknown, pdfs: Array<{ id: string; blob: Blob }>) {
+  async function applyCloudAccountState(value: unknown, pdfs: Array<{ id: string; blob: Blob }>, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     if (!isSavedStateShape(value)) throw new Error("クラウドの保存形式を確認できませんでした");
     const expectedRevision = storageRevision.current;
     const expectedFingerprint = stateFingerprint(latestStateRef.current);
@@ -1141,9 +1172,11 @@ export default function HomePage() {
       throw new Error("クラウドのノートとPDFの対応を確認できませんでした");
     }
     await saveChain.current.catch(() => undefined);
+    signal?.throwIfAborted();
     if (!canApplyReferenceRestore(expectedRevision, storageRevision.current, expectedFingerprint, stateFingerprint(latestStateRef.current))) throw new Error("確認中に端末の内容が変わりました。元のPDFとメモを残したまま同期を停止しました。再度内容を確認してください。");
     saveEpoch.current += 1;
-    const saved = await restoreAppStateAndPdfs(normalized, pdfs, false, CURRENT_SCHEMA_VERSION, expectedRevision, writerId.current);
+    const saved = await restoreAppStateAndPdfs(normalized, pdfs, false, CURRENT_SCHEMA_VERSION, expectedRevision, writerId.current, signal);
+    signal?.throwIfAborted();
     storageRevision.current = saved.revision;
     lastPersistedFingerprint.current = stateFingerprint(normalized);
     applyNormalizedState(normalized, false);
@@ -1239,7 +1272,7 @@ export default function HomePage() {
     return id;
   }
 
-  function updateMemo(memoId: string, changes: Partial<Pick<Memo, "text" | "tags" | "x" | "y" | "width" | "height" | "page" | "reflections" | "pinned" | "reviewStage" | "nextReviewAt" | "lastReviewedAt">>) {
+  function updateMemo(memoId: string, changes: Partial<Pick<Memo, "text" | "tags" | "x" | "y" | "width" | "height" | "page" | "reflections" | "pinned" | "reviewStage" | "nextReviewAt" | "lastReviewedAt" | "checklist">>) {
     setMemos((current) => current.map((memo) => memo.id === memoId ? { ...memo, ...changes } : memo));
   }
 
@@ -1414,17 +1447,7 @@ export default function HomePage() {
     const tag = newTag.trim();
     if (!tag || !activeSession) return "";
 
-    if (newTagScope === "global") {
-      setGlobalTags((current) => current.includes(tag) ? current : [...current, tag]);
-    } else {
-      setCourseTags((current) => {
-        const tags = current[activeSession.courseId] ?? current[activeSession.course] ?? [];
-        return {
-          ...current,
-          [activeSession.courseId]: tags.includes(tag) ? tags : [...tags, tag],
-        };
-      });
-    }
+    setGlobalTags((current) => current.includes(tag) ? current : [...current, tag]);
     setNewTag("");
     setShowTagCreator(false);
     return tag;
@@ -1573,6 +1596,7 @@ export default function HomePage() {
             <GraduationCap size={19} />
             <span>大学生活<small>学びも遊びも</small></span>
           </button>}
+          <button className={view === "planner" ? "active" : ""} onClick={() => setView("planner")}><Check size={19} /><span>ToDo・カレンダー</span></button>
           <button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}>
             <Settings2 size={19} />
             <span>設定</span>
@@ -1593,6 +1617,7 @@ export default function HomePage() {
         currentState={currentSavedState()}
         schemaVersion={CURRENT_SCHEMA_VERSION}
         hydrated={hydrated}
+        localReady={saveStatus === "saved" && autoSaveEnabled && !loadError}
         localHasData={hasMeaningfulState(currentSavedState())}
         onApplyCloud={applyCloudAccountState}
         onCampusEntitlement={handleCampusEntitlement}
@@ -1633,8 +1658,13 @@ export default function HomePage() {
 
         <main className={view === "workspace" ? "workspace-main" : ""}>
           {view === "inbox" && <UniversityInbox inbox={inbox} courses={courses} disabled={!autoSaveEnabled || Boolean(loadError) || saveStatus === "loading" || saveStatus === "conflict" || saveStatus === "error"} onChange={setInbox} onImport={importInboxCourses} />}
+          {view === "planner" && <PlannerPanel key={plannerStartTab} initialTab={plannerStartTab} onSession={id => { const session = activeSessions.find(s => s.id === id); if (session) void openSession(session); }} state={plannerInput} disabled={plannerDisabled} onPatch={patchTodo} onPlanner={setPlanner} onMemo={id => { const memo = activeMemos.find(m => m.id === id); if (memo) openMemoOrigin(memo); }} onCourse={openCourseFromTimetable} />}
           {view === "start" && (
-            <StartView
+            <PlannerHome rows={todoRows} events={planner.events} disabled={plannerDisabled}
+              onOpen={() => { setPlannerStartTab("todo"); setView("planner"); }}
+              onOpenEvents={() => { setPlannerStartTab("events"); setView("planner"); }}
+              onAddTodo={todo => setPlanner(previous => ({ ...previous, todos: [...previous.todos, todo] }))}
+              onAddEvent={event => setPlanner(previous => ({ ...previous, events: [...previous.events, event] }))}><StartView
               courses={activeCourses}
               terms={terms}
               todayDay={hydrated ? new Date().getDay() : 0}
@@ -1652,11 +1682,11 @@ export default function HomePage() {
               onOpenMemo={openMemoOrigin}
               onReflect={setReflectionMemoId}
               onRestoreCourse={restoreCourse}
-            />
+            /></PlannerHome>
           )}
 
           {view === "course" && selectedCourse && (
-            <CourseDetailView
+            <><CourseDetailView
               course={selectedCourse}
               sessions={activeSessions.filter((session) => session.courseId === selectedCourse.id)}
               memoCount={(sessionId) => activeMemos.filter((memo) => memo.sessionId === sessionId).length}
@@ -1673,7 +1703,7 @@ export default function HomePage() {
               nextAssignment={campus.assignments.filter((item) => item.courseId === selectedCourse.id && item.status !== "done").sort((a, b) => a.dueISO.localeCompare(b.dueISO))[0]}
               nextExam={campus.exams.filter((item) => item.courseId === selectedCourse.id).sort((a, b) => a.datetime.localeCompare(b.datetime))[0]}
               onOpenCampus={() => setView("campus")}
-            />
+            /><CourseMemoPanel onCreateSession={() => { setSelectedSession(nextSessionNumber(selectedCourse.id, activeSessions)); setDraftPdf(null); setStartError(""); setShowSessionDialog(true); }} onSchedule={(id, day) => { if (!plannerDisabled) setSessions(current => current.map(session => session.id === id ? { ...session, scheduledOn: normalizeSessionDay(day), updatedAt: new Date().toISOString() } : session)); }} memos={activeMemos.filter(m => m.courseId === selectedCourse.id)} sessions={activeSessions.filter(s => s.courseId === selectedCourse.id)} disabled={plannerDisabled} onPatch={(id, checklist) => updateMemo(id, { checklist })} onOpen={id => { const memo = activeMemos.find(m => m.id === id); if (memo) openMemoOrigin(memo); }} /></>
           )}
 
           {view === "campus" && campusVisible && (
@@ -1775,6 +1805,7 @@ export default function HomePage() {
           {view === "workspace" && activeSession && (
             <WorkspaceView
               key={activeSession.id}
+              onChecklist={setChecklistMemoId}
               session={activeSession}
               memos={sessionMemos}
               pdfBlob={pdfBlob}
@@ -1782,7 +1813,7 @@ export default function HomePage() {
               setShowPdf={setShowPdf}
               page={page}
               setPage={changePdfPage}
-              globalTags={globalTags}
+              globalTags={Array.from(new Set([...globalTags, ...Object.values(courseTags).flat(), ...activeMemos.flatMap(memo => memo.tags)]))}
               courseTags={currentCourseTags}
               showTagCreator={showTagCreator}
               setShowTagCreator={setShowTagCreator}
@@ -1813,7 +1844,7 @@ export default function HomePage() {
       </div>
 
       {view !== "workspace" && (
-        <nav className={`mobile-nav has-inbox${campusVisible ? " has-campus" : ""}`} aria-label="モバイルメニュー">
+        <nav className={`mobile-nav has-planner has-inbox${campusVisible ? " has-campus" : ""}`} aria-label="モバイルメニュー">
           <button className={view === "start" || view === "course" ? "active" : ""} onClick={returnToStart}>
             <CalendarDays size={20} /><span>時間割</span>
           </button>
@@ -1826,6 +1857,7 @@ export default function HomePage() {
           {campusVisible && <button className={view === "campus" ? "active" : ""} onClick={() => setView("campus")}>
             <GraduationCap size={20} /><span>大学生活</span>
           </button>}
+          <button className={view === "planner" ? "active" : ""} onClick={() => setView("planner")}><Check size={20} /><span>ToDo・予定</span></button>
           <button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}>
             <Settings2 size={20} /><span>設定</span>
           </button>
@@ -1860,6 +1892,7 @@ export default function HomePage() {
         <SessionEditDialog session={activeSessions.find((session) => session.id === editingSessionId) as SessionRecord} sessions={activeSessions.filter((session) => session.courseId === selectedCourseId)} onClose={() => setEditingSessionId(null)} onSave={(number, title) => saveSessionEdit(editingSessionId, number, title)} />
       )}
 
+      {checklistMemo && <PlannerDialog title={`${checklistMemo.course} · チェック項目`} onClose={() => setChecklistMemoId(null)}><label>付箋の本文<textarea value={checklistMemo.text} disabled={plannerDisabled} onChange={e => updateMemo(checklistMemo.id, { text: e.target.value })} /></label><label>共通タグ（カンマ区切り）<TagInput tags={checklistMemo.tags} disabled={plannerDisabled} onChange={tags => updateMemo(checklistMemo.id, { tags })} /></label><MemoChecklist memoId={checklistMemo.id} items={checklistMemo.checklist} disabled={plannerDisabled} onChange={checklist => updateMemo(checklistMemo.id, { checklist })} /></PlannerDialog>}
       {showTermDialog && <TermDialog existingTerms={terms} onClose={() => setShowTermDialog(false)} onSubmit={addTerm} />}
 
       {placementCourseId && activeCourses.find((course) => course.id === placementCourseId) && (
@@ -1891,7 +1924,10 @@ export default function HomePage() {
 
       {showSessionDialog && selectedCourse && (
         <SessionStartDialog
+          key={selectedCourse.id}
+          disabled={plannerDisabled}
           course={selectedCourse}
+          schedule={selectedCourse.weekday && selectedCourse.period ? weekdayLabel(selectedCourse.weekday) + "・" + selectedCourse.period + "限" : "曜日・時限未設定"}
           sessionNumber={selectedSession}
           setSessionNumber={setSelectedSession}
           draftPdf={draftPdf}
@@ -2767,110 +2803,10 @@ function TutorialOverlay({ onClose, onFinish }: { onClose: () => void; onFinish:
   );
 }
 
-function SessionStartDialog({
-  course,
-  sessionNumber,
-  setSessionNumber,
-  draftPdf,
-  setDraftPdf,
-  starting,
-  progress,
-  error,
-  existing,
-  onClose,
-  onStart,
-}: {
-  course: Course;
-  sessionNumber: string;
-  setSessionNumber: (value: string) => void;
-  draftPdf: File | null;
-  setDraftPdf: (value: File | null) => void;
-  starting: boolean;
-  progress: { message: string; progress: number };
-  error: string;
-  existing?: SessionRecord;
-  onClose: () => void;
-  onStart: () => void;
-}) {
-  const schedule = course.weekday && course.period
-    ? weekdayLabel(course.weekday) + "・" + course.period + "限"
-    : "曜日・時限未設定";
-  const draftPdfWarning = draftPdf ? pdfFileWarning(draftPdf) : "";
-  const draftPdfTooLarge = Boolean(draftPdf && draftPdf.size > MAX_PDF_FILE_SIZE_BYTES);
-
-  useEffect(() => {
-    function closeWithEscape(event: KeyboardEvent) {
-      if (event.key === "Escape" && !starting) onClose();
-    }
-    window.addEventListener("keydown", closeWithEscape);
-    return () => window.removeEventListener("keydown", closeWithEscape);
-  }, [onClose, starting]);
-
-  return (
-    <div className="modal-backdrop session-backdrop" role="presentation" onMouseDown={() => { if (!starting) onClose(); }}>
-      <section className="course-dialog session-dialog" role="dialog" aria-modal="true" aria-labelledby="session-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
-        <div className="session-dialog-top">
-          <div className="session-course-icon"><BookOpen size={20} /></div>
-          <div>
-            <p>{schedule}{course.room ? "・" + course.room : ""}</p>
-            <h2 id="session-dialog-title">{course.title}</h2>
-            <span>{course.instructor || course.term}</span>
-          </div>
-          <button type="button" aria-label="閉じる" onClick={onClose} disabled={starting}><X size={19} /></button>
-        </div>
-
-        <div className="session-quick-row">
-          <div>
-            <strong>何回目の授業ですか？</strong>
-            <small>次の回を自動で入れています</small>
-          </div>
-          <div className="session-stepper">
-            <button type="button" aria-label="授業回を一つ戻す" onClick={() => setSessionNumber(String(Math.max(1, Number(normalizeSessionNumber(sessionNumber)) - 1)))} disabled={starting}>−</button>
-            <label><span>第</span><input aria-label="授業回" inputMode="numeric" maxLength={3} value={sessionNumber} onChange={(event) => setSessionNumber(event.target.value.replace(/\D/g, ""))} disabled={starting} /><span>回</span></label>
-            <button type="button" aria-label="授業回を一つ進める" onClick={() => setSessionNumber(String(Number(normalizeSessionNumber(sessionNumber)) + 1))} disabled={starting}>＋</button>
-          </div>
-        </div>
-        {existing && <p className="existing-hint session-existing"><Check size={15} /> この回のノートがあります。続きから開きます。</p>}
-
-        <div className="optional-pdf dialog-pdf">
-          <div><Paperclip size={18} /><span><strong>この回の講義資料</strong><small>PDFなしでも始められます</small></span></div>
-          {draftPdf ? (
-            <div className="selected-file">
-              <FileText size={18} />
-              <span>{draftPdf.name}<small>{pdfSizeLabel(draftPdf.size)}</small></span>
-              <button type="button" aria-label="PDFを外す" onClick={() => setDraftPdf(null)} disabled={starting}><X size={16} /></button>
-            </div>
-          ) : (
-            <label className="pdf-pick-button">
-              <Upload size={16} /> PDFを選ぶ
-              <input type="file" accept="application/pdf,.pdf" onChange={(event) => setDraftPdf(event.target.files?.[0] ?? null)} disabled={starting} />
-            </label>
-          )}
-        </div>
-        <p className="pdf-rights-note">個人学習で利用できる講義資料を選んでください。PDFはこの端末内で処理されます。</p>
-        {draftPdfTooLarge && <p className="pdf-limit-warning" role="alert"><AlertTriangle size={16} /> PDFが大きすぎます（上限 {pdfSizeLabel(MAX_PDF_FILE_SIZE_BYTES)}）。ページを分けて追加してください。</p>}
-        {!draftPdfTooLarge && draftPdfWarning && <p className="pdf-limit-warning"><AlertTriangle size={16} /> {draftPdfWarning}</p>}
-
-        {starting && draftPdf && (
-          <div className="start-progress">
-            <div><LoaderCircle size={18} className="spin" /><span>{progress.message || "PDFを準備しています"}</span><b>{progress.progress}%</b></div>
-            <i><span style={{ width: progress.progress + "%" }} /></i>
-          </div>
-        )}
-        {error && <p className="form-error"><AlertTriangle size={17} /> {error}</p>}
-
-        <button className="start-button session-start-button" onClick={onStart} disabled={!isValidSessionNumber(sessionNumber) || starting || draftPdfTooLarge}>
-          {starting ? <LoaderCircle size={19} className="spin" /> : <StickyNote size={19} />}
-          {starting ? "準備しています" : existing && !draftPdf ? "この授業のノートを続ける" : "この授業のノートを始める"}
-          {!starting && <ChevronRight size={19} />}
-        </button>
-      </section>
-    </div>
-  );
-}
 
 function WorkspaceView({
   session,
+  onChecklist,
   memos,
   pdfBlob,
   showPdf,
@@ -2904,6 +2840,7 @@ function WorkspaceView({
   onBack,
 }: {
   session: SessionRecord;
+  onChecklist: (id: string) => void;
   memos: Memo[];
   pdfBlob: Blob | null;
   showPdf: boolean;
@@ -2920,7 +2857,7 @@ function WorkspaceView({
   setNewTagScope: (value: TagScope) => void;
   addCustomTag: () => string;
   createMemo: (position: { x: number; y: number }, source?: { text: string; start: number; end: number }) => string;
-  updateMemo: (memoId: string, changes: Partial<Pick<Memo, "text" | "tags" | "x" | "y" | "width" | "height" | "page" | "reflections" | "pinned" | "reviewStage" | "nextReviewAt" | "lastReviewedAt">>) => void;
+  updateMemo: (memoId: string, changes: Partial<Pick<Memo, "text" | "tags" | "x" | "y" | "width" | "height" | "page" | "reflections" | "pinned" | "reviewStage" | "nextReviewAt" | "lastReviewedAt" | "checklist">>) => void;
   updateSessionNote: (sessionId: string, noteText: string) => void;
   updateNotebookPrefs: (sessionId: string, changes: Partial<NotebookPrefs>) => void;
   hasCourseTemplate: boolean;
@@ -3428,7 +3365,7 @@ function WorkspaceView({
                   <input value={newTag} onChange={(event) => setNewTag(event.target.value)} placeholder="新しいジャンル名" aria-label="新しいジャンル名" />
                   <div className="scope-switch">
                     <button type="button" className={newTagScope === "global" ? "active" : ""} onClick={() => setNewTagScope("global")}>全講義</button>
-                    <button type="button" className={newTagScope === "course" ? "active" : ""} onClick={() => setNewTagScope("course")}>この講義だけ</button>
+                    <span>タグは全講義で共通です</span>
                   </div>
                   <button type="button" className="tag-add" onClick={handleAddCustomTag} disabled={!newTag.trim()}>追加</button>
                   <button type="button" className="tag-cancel" aria-label="ジャンル作成を閉じる" onClick={() => setShowTagCreator(false)}><X size={16} /></button>
@@ -3542,6 +3479,7 @@ function WorkspaceView({
                     rows={5}
                   />
                   <footer>
+                    <button type="button" onClick={() => onChecklist(memo.id)}>チェック項目（{(memo.checklist ?? []).filter(item => !item.deletedAt).length}）</button>
                     {memo.sourceText ? (
                       <button onClick={() => returnToMemoSource(memo)}>元の文章へ戻る</button>
                     ) : <span>自動保存</span>}
@@ -3711,7 +3649,7 @@ function ReviewView({
       </header>
       <div className="review-kind-switch" role="tablist" aria-label="見返す内容">
         <button type="button" role="tab" aria-selected={reviewKind === "notes"} className={reviewKind === "notes" ? "active" : ""} onClick={() => setReviewKind("notes")}><NotebookPen size={18} /><span><strong>ノート</strong><small>本文・PDFから探す</small></span><b>{sessions.length}</b></button>
-        <button type="button" role="tab" aria-selected={reviewKind === "memos"} className={reviewKind === "memos" ? "active" : ""} onClick={() => setReviewKind("memos")}><StickyNote size={18} /><span><strong>付箋</strong><small>大切な箇所を見返す</small></span><b>{allMemos.filter((memo) => memo.text.trim()).length}</b></button>
+        <button type="button" role="tab" aria-selected={reviewKind === "memos"} className={reviewKind === "memos" ? "active" : ""} onClick={() => setReviewKind("memos")}><StickyNote size={18} /><span><strong>付箋</strong><small>大切な箇所を見返す</small></span><b>{allMemos.filter((memo) => memoContentText(memo)).length}</b></button>
       </div>
       {reviewKind === "notes" ? (
         <NoteReviewPanel courses={courses} sessions={sessions} state={noteReviewState} onChange={setNoteReviewState} memoCount={memoCount} onOpen={onOpenNote} onEdit={onEditNote} onDelete={onDeleteNote} />
@@ -3864,7 +3802,7 @@ function MemoReviewPanel({
                   }
                 }}>
                   <div className="sticky-tags">{memo.tags.map((item) => <span key={item}>{item}</span>)}</div>
-                  <p>{concealed ? "内容を思い出してから、ここを押して答え合わせ" : memo.text}</p>
+                  <p>{concealed ? "内容を思い出してから、ここを押して答え合わせ" : memoContentText(memo)}</p>
                   {!concealed && latestReflection && (
                     <div className="review-reflection">
                       <span>{reflectionStatusLabel(latestReflection.status)}</span>
@@ -4131,6 +4069,7 @@ function normalizeSavedState(value: SavedState) {
     const pdfReference = normalizePdfReferenceFields(session, hasPdf, fileName, pageCount);
     return {
       ...session,
+      scheduledOn: normalizeSessionDay(session.scheduledOn),
       courseId: course.id,
       course: course.title,
       fileName,
@@ -4192,6 +4131,7 @@ function normalizeSavedState(value: SavedState) {
         }))
         : [],
       ...normalizeMemoReview(memo),
+      checklist: normalizeChecklist(memo.checklist),
       deletedAt: typeof memo.deletedAt === "string" && Number.isFinite(new Date(memo.deletedAt).getTime()) ? memo.deletedAt : null,
     };
   });
@@ -4230,6 +4170,7 @@ function normalizeSavedState(value: SavedState) {
     tutorialSeen: typeof value.tutorialSeen === "boolean" ? value.tutorialSeen : rawCourses.length > 0,
     campus: normalizeCampusState(value.campus),
     inbox: normalizeInformationInbox(value.inbox),
+    planner: normalizePlanner(value.planner),
     displayPreferences: normalizeDisplayPreferences(value.displayPreferences),
   };
 }
@@ -4460,13 +4401,6 @@ function weekdayLabel(value: number) {
   return weekdays.find((day) => day.value === value)?.label ?? "曜日未設定";
 }
 
-function normalizeSessionNumber(value: string) {
-  return value.match(/\d+/)?.[0] ?? (value.trim().replace(/^第|回$/g, "") || "1");
-}
-
-function isValidSessionNumber(value: string) {
-  return /^\d+$/.test(value.trim()) && Number(value) >= 1;
-}
 
 function sessionLabel(value: string) {
   return "第" + normalizeSessionNumber(value) + "回";
@@ -4496,7 +4430,9 @@ function hasMeaningfulState(state: SavedState) {
     || campus.gpaProfile.plans.length
     || campus.degreePlan.categories.length
     || state.inbox?.records.length
-    || state.inbox?.catalogProfile,
+    || state.inbox?.catalogProfile
+    || state.planner?.todos.length
+    || state.planner?.events.length,
   );
 }
 

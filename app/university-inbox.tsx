@@ -5,6 +5,7 @@ import { applyManabiImport, FIELD_LABELS, informationWarnings, ITEM_LABELS, MAX_
 import { MANABI_AI_PROMPT } from './manabi-import-prompt';
 import sample from '../examples/manabi-import-seminar.json';
 import courseSample from '../examples/manabi-import-courses.json';
+import academicCalendar from '../examples/gunma-info-2026-academic-calendar.json';
 import catalogSample from '../examples/manabi-import-catalog.json';
 import type { ImportItem, ImportItemType, InformationInbox, ManabiImport } from './manabi-import-types';
 import type { TransferCourse } from './course-transfer';
@@ -78,7 +79,7 @@ export function UniversityInbox({ inbox, courses, disabled, onChange, onImport }
     <section className="inbox-card" aria-label="AIから情報を取り込む">
       <h2>AIから情報を取り込む</h2><p>① 依頼文と資料をAIへ渡す → ② JSONを貼る → ③ 解析・確認 → ④ 選んで取り込む</p>
       <fieldset><legend>講義情報の取り込み先</legend><label className="inbox-check"><input type="radio" name="course-import-mode" checked={importMode === 'catalog'} onChange={() => { setImportMode('catalog'); setCourseReviewed(false); }} />授業カタログ・Inboxに保存（候補を選ぶまで講義・ノートは作らない）</label><label className="inbox-check"><input type="radio" name="course-import-mode" checked={importMode === 'register'} onChange={() => { setImportMode('register'); setCourseReviewed(false); }} />確認した講義を時間割・ノートにも直接登録</label></fieldset>
-      <div className="inbox-actions"><button type="button" onClick={() => void copyPrompt()}>AI向け依頼文をコピー</button><button type="button" onClick={() => edit(JSON.stringify(catalogSample, null, 2))}>授業カタログのサンプルを表示</button><button type="button" onClick={() => edit(JSON.stringify(courseSample, null, 2))}>講義・時間割のサンプルを表示</button><button type="button" onClick={() => edit(JSON.stringify(sample, null, 2))}>ゼミのサンプルを表示</button><button type="button" onClick={() => setPromptVisible(!promptVisible)}>依頼文を表示</button></div>
+      <div className="inbox-actions"><button type="button" onClick={() => void copyPrompt()}>AI向け依頼文をコピー</button><button type="button" onClick={() => edit(JSON.stringify(academicCalendar, null, 2))}>群馬大学・2026年度学年暦を確認</button><button type="button" onClick={() => edit(JSON.stringify(catalogSample, null, 2))}>授業カタログのサンプルを表示</button><button type="button" onClick={() => edit(JSON.stringify(courseSample, null, 2))}>講義・時間割のサンプルを表示</button><button type="button" onClick={() => edit(JSON.stringify(sample, null, 2))}>ゼミのサンプルを表示</button><button type="button" onClick={() => setPromptVisible(!promptVisible)}>依頼文を表示</button></div>
       {promptVisible && <label>AI向け依頼文（Schemaを含む）<textarea readOnly rows={8} value={MANABI_AI_PROMPT} onFocus={event => event.target.select()} /></label>}
       <label>JSONファイル<input type="file" accept=".json,application/json" disabled={disabled} onChange={async event => {
         const file = event.target.files?.[0]; event.target.value = ''; if (!file) return;

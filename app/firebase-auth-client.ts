@@ -1,6 +1,7 @@
 "use client";
 
-import { getApp, getApps, initializeApp, type FirebaseOptions } from "firebase/app";
+import { getApp, getApps, initializeApp } from "firebase/app";
+import { loadPublicAuthConfig } from "./firebase-config-client";
 import {
   browserLocalPersistence,
   createUserWithEmailAndPassword,
@@ -17,23 +18,23 @@ import {
   type User,
 } from "firebase/auth";
 
-type PublicAuthConfig = { enabled: boolean; config?: FirebaseOptions };
-
 let authPromise: Promise<Auth | null> | null = null;
 
 export async function firebaseAuth(): Promise<Auth | null> {
   if (!authPromise) {
-    authPromise = fetch("/api/auth/config", { cache: "no-store" })
-      .then(async (response) => {
-        const result = await response.json() as PublicAuthConfig;
-        if (!result.enabled || !result.config) return null;
-        const app = getApps().length ? getApp() : initializeApp(result.config);
-        const auth = getAuth(app);
-        auth.languageCode = "ja";
-        await setPersistence(auth, browserLocalPersistence);
-        return auth;
-      })
-      .catch(() => null);
+    // Cache intentional "disabled" or successful auth, but never cache transient failures.
+    authPromise = (async () => {
+      const result = await loadPublicAuthConfig();
+      if (!result.enabled || !result.config) return null;
+      const app = getApps().length ? getApp() : initializeApp(result.config);
+      const auth = getAuth(app);
+      auth.languageCode = "ja";
+      await setPersistence(auth, browserLocalPersistence);
+      return auth;
+    })().catch(cause => {
+      authPromise = null;
+      throw cause;
+    });
   }
   return authPromise;
 }
