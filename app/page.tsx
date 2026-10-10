@@ -5,6 +5,8 @@ import { TagInput } from './planner-tag-input';
 import { PlannerPanel } from "./planner-panel";
 import { PlannerHome } from "./planner-home";
 import { MemoChecklist } from "./memo-checklist";
+import { SessionStartDialog } from "./session-start-dialog";
+import { normalizeSessionNumber, isValidSessionNumber } from "./session-number-model";
 import { CourseMemoPanel } from "./course-memo-panel";
 import { EMPTY_PLANNER, memoContentText, normalizeSessionDay, normalizePlanner, normalizeChecklist, patchChecklist, projectTodos, type PlannerState, type ChecklistItem, type TodoRow } from "./planner-model";
 import { CourseTransferPanel } from "./course-transfer-panel";
@@ -83,9 +85,6 @@ import { createBackupFile, inspectBackupFile, type InspectedBackup } from "./bac
 import { mergeImportedState, mergeLegacyCampusData } from "./data-migration-model";
 import {
   formatPdfProcessingError,
-  pdfFileWarning,
-  pdfSizeLabel,
-  MAX_PDF_FILE_SIZE_BYTES,
   ProcessedTopic,
   processPdfLocally,
 } from "./pdf-local";
@@ -972,11 +971,12 @@ export default function HomePage() {
     }
   }
 
-  async function startSelectedSession() {
+  async function startSelectedSession(scheduledOn: string) {
     if (!selectedCourse) return;
     const course = selectedCourse.title;
     const sessionNumber = normalizeSessionNumber(selectedSession);
-    if (!isValidSessionNumber(selectedSession) || starting) return;
+    if (!isValidSessionNumber(selectedSession) || starting || plannerDisabled) return;
+    const day = normalizeSessionDay(scheduledOn);
 
     setStarting(true);
     setStartError("");
@@ -984,7 +984,9 @@ export default function HomePage() {
 
     try {
       if (!draftPdf && existingSelection) {
-        await openSession(existingSelection);
+        const updated = { ...existingSelection, scheduledOn: day, updatedAt: new Date().toISOString() };
+        setSessions(current => current.map(session => session.id === updated.id ? updated : session));
+        await openSession(updated);
         return;
       }
 
@@ -1036,6 +1038,7 @@ export default function HomePage() {
         };
       }
 
+      nextSession = { ...nextSession, scheduledOn: day };
       const nextSessions = [nextSession, ...sessions.filter((item) => item.id !== nextSession.id)];
       if (draftPdf) {
         await persistStateAndPdf({ ...currentSavedState(), sessions: nextSessions }, nextSession.id, draftPdf);
@@ -1695,7 +1698,7 @@ export default function HomePage() {
               nextAssignment={campus.assignments.filter((item) => item.courseId === selectedCourse.id && item.status !== "done").sort((a, b) => a.dueISO.localeCompare(b.dueISO))[0]}
               nextExam={campus.exams.filter((item) => item.courseId === selectedCourse.id).sort((a, b) => a.datetime.localeCompare(b.datetime))[0]}
               onOpenCampus={() => setView("campus")}
-            /><CourseMemoPanel onSchedule={(id, day) => { if (!plannerDisabled) setSessions(current => current.map(session => session.id === id ? { ...session, scheduledOn: normalizeSessionDay(day), updatedAt: new Date().toISOString() } : session)); }} memos={activeMemos.filter(m => m.courseId === selectedCourse.id)} sessions={activeSessions.filter(s => s.courseId === selectedCourse.id)} disabled={plannerDisabled} onPatch={(id, checklist) => updateMemo(id, { checklist })} onOpen={id => { const memo = activeMemos.find(m => m.id === id); if (memo) openMemoOrigin(memo); }} /></>
+            /><CourseMemoPanel onCreateSession={() => { setSelectedSession(nextSessionNumber(selectedCourse.id, activeSessions)); setDraftPdf(null); setStartError(""); setShowSessionDialog(true); }} onSchedule={(id, day) => { if (!plannerDisabled) setSessions(current => current.map(session => session.id === id ? { ...session, scheduledOn: normalizeSessionDay(day), updatedAt: new Date().toISOString() } : session)); }} memos={activeMemos.filter(m => m.courseId === selectedCourse.id)} sessions={activeSessions.filter(s => s.courseId === selectedCourse.id)} disabled={plannerDisabled} onPatch={(id, checklist) => updateMemo(id, { checklist })} onOpen={id => { const memo = activeMemos.find(m => m.id === id); if (memo) openMemoOrigin(memo); }} /></>
           )}
 
           {view === "campus" && campusVisible && (
@@ -1916,7 +1919,10 @@ export default function HomePage() {
 
       {showSessionDialog && selectedCourse && (
         <SessionStartDialog
+          key={selectedCourse.id}
+          disabled={plannerDisabled}
           course={selectedCourse}
+          schedule={selectedCourse.weekday && selectedCourse.period ? weekdayLabel(selectedCourse.weekday) + "・" + selectedCourse.period + "限" : "曜日・時限未設定"}
           sessionNumber={selectedSession}
           setSessionNumber={setSelectedSession}
           draftPdf={draftPdf}
@@ -2792,107 +2798,6 @@ function TutorialOverlay({ onClose, onFinish }: { onClose: () => void; onFinish:
   );
 }
 
-function SessionStartDialog({
-  course,
-  sessionNumber,
-  setSessionNumber,
-  draftPdf,
-  setDraftPdf,
-  starting,
-  progress,
-  error,
-  existing,
-  onClose,
-  onStart,
-}: {
-  course: Course;
-  sessionNumber: string;
-  setSessionNumber: (value: string) => void;
-  draftPdf: File | null;
-  setDraftPdf: (value: File | null) => void;
-  starting: boolean;
-  progress: { message: string; progress: number };
-  error: string;
-  existing?: SessionRecord;
-  onClose: () => void;
-  onStart: () => void;
-}) {
-  const schedule = course.weekday && course.period
-    ? weekdayLabel(course.weekday) + "・" + course.period + "限"
-    : "曜日・時限未設定";
-  const draftPdfWarning = draftPdf ? pdfFileWarning(draftPdf) : "";
-  const draftPdfTooLarge = Boolean(draftPdf && draftPdf.size > MAX_PDF_FILE_SIZE_BYTES);
-
-  useEffect(() => {
-    function closeWithEscape(event: KeyboardEvent) {
-      if (event.key === "Escape" && !starting) onClose();
-    }
-    window.addEventListener("keydown", closeWithEscape);
-    return () => window.removeEventListener("keydown", closeWithEscape);
-  }, [onClose, starting]);
-
-  return (
-    <div className="modal-backdrop session-backdrop" role="presentation" onMouseDown={() => { if (!starting) onClose(); }}>
-      <section className="course-dialog session-dialog" role="dialog" aria-modal="true" aria-labelledby="session-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
-        <div className="session-dialog-top">
-          <div className="session-course-icon"><BookOpen size={20} /></div>
-          <div>
-            <p>{schedule}{course.room ? "・" + course.room : ""}</p>
-            <h2 id="session-dialog-title">{course.title}</h2>
-            <span>{course.instructor || course.term}</span>
-          </div>
-          <button type="button" aria-label="閉じる" onClick={onClose} disabled={starting}><X size={19} /></button>
-        </div>
-
-        <div className="session-quick-row">
-          <div>
-            <strong>何回目の授業ですか？</strong>
-            <small>次の回を自動で入れています</small>
-          </div>
-          <div className="session-stepper">
-            <button type="button" aria-label="授業回を一つ戻す" onClick={() => setSessionNumber(String(Math.max(1, Number(normalizeSessionNumber(sessionNumber)) - 1)))} disabled={starting}>−</button>
-            <label><span>第</span><input aria-label="授業回" inputMode="numeric" maxLength={3} value={sessionNumber} onChange={(event) => setSessionNumber(event.target.value.replace(/\D/g, ""))} disabled={starting} /><span>回</span></label>
-            <button type="button" aria-label="授業回を一つ進める" onClick={() => setSessionNumber(String(Number(normalizeSessionNumber(sessionNumber)) + 1))} disabled={starting}>＋</button>
-          </div>
-        </div>
-        {existing && <p className="existing-hint session-existing"><Check size={15} /> この回のノートがあります。続きから開きます。</p>}
-
-        <div className="optional-pdf dialog-pdf">
-          <div><Paperclip size={18} /><span><strong>この回の講義資料</strong><small>PDFなしでも始められます</small></span></div>
-          {draftPdf ? (
-            <div className="selected-file">
-              <FileText size={18} />
-              <span>{draftPdf.name}<small>{pdfSizeLabel(draftPdf.size)}</small></span>
-              <button type="button" aria-label="PDFを外す" onClick={() => setDraftPdf(null)} disabled={starting}><X size={16} /></button>
-            </div>
-          ) : (
-            <label className="pdf-pick-button">
-              <Upload size={16} /> PDFを選ぶ
-              <input type="file" accept="application/pdf,.pdf" onChange={(event) => setDraftPdf(event.target.files?.[0] ?? null)} disabled={starting} />
-            </label>
-          )}
-        </div>
-        <p className="pdf-rights-note">個人学習で利用できる講義資料を選んでください。PDFはこの端末内で処理されます。</p>
-        {draftPdfTooLarge && <p className="pdf-limit-warning" role="alert"><AlertTriangle size={16} /> PDFが大きすぎます（上限 {pdfSizeLabel(MAX_PDF_FILE_SIZE_BYTES)}）。ページを分けて追加してください。</p>}
-        {!draftPdfTooLarge && draftPdfWarning && <p className="pdf-limit-warning"><AlertTriangle size={16} /> {draftPdfWarning}</p>}
-
-        {starting && draftPdf && (
-          <div className="start-progress">
-            <div><LoaderCircle size={18} className="spin" /><span>{progress.message || "PDFを準備しています"}</span><b>{progress.progress}%</b></div>
-            <i><span style={{ width: progress.progress + "%" }} /></i>
-          </div>
-        )}
-        {error && <p className="form-error"><AlertTriangle size={17} /> {error}</p>}
-
-        <button className="start-button session-start-button" onClick={onStart} disabled={!isValidSessionNumber(sessionNumber) || starting || draftPdfTooLarge}>
-          {starting ? <LoaderCircle size={19} className="spin" /> : <StickyNote size={19} />}
-          {starting ? "準備しています" : existing && !draftPdf ? "この授業のノートを続ける" : "この授業のノートを始める"}
-          {!starting && <ChevronRight size={19} />}
-        </button>
-      </section>
-    </div>
-  );
-}
 
 function WorkspaceView({
   session,
@@ -4491,13 +4396,6 @@ function weekdayLabel(value: number) {
   return weekdays.find((day) => day.value === value)?.label ?? "曜日未設定";
 }
 
-function normalizeSessionNumber(value: string) {
-  return value.match(/\d+/)?.[0] ?? (value.trim().replace(/^第|回$/g, "") || "1");
-}
-
-function isValidSessionNumber(value: string) {
-  return /^\d+$/.test(value.trim()) && Number(value) >= 1;
-}
 
 function sessionLabel(value: string) {
   return "第" + normalizeSessionNumber(value) + "回";

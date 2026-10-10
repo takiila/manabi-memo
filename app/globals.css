@@ -8099,3 +8099,10 @@ dialog.planner-dialog::backdrop { background: rgba(15, 23, 42, .5); }
   .mobile-nav.has-planner.has-inbox { grid-template-columns: repeat(5,minmax(0,1fr)); }
   .mobile-nav.has-planner.has-inbox.has-campus { grid-template-columns: repeat(6,minmax(0,1fr)); }
 }
+
+.session-date-field { display:flex; flex-direction:column; gap:8px; margin:18px 0; color:#526258; font-size:14px; }
+.session-date-field input { width:100%; min-height:44px; padding:10px; border:1px solid #d8dfd5; border-radius:9px; color:#253b31; background:#fffefa; }
+.session-date-field small,.session-date-empty p { color:#68766b; line-height:1.6; }
+.course-memo-panel > details > label { margin:12px 0; }
+.course-memo-panel button:disabled { opacity:.5; cursor:not-allowed; }
+.calendar-agenda .selected-event { border:2px solid #426c55; }
