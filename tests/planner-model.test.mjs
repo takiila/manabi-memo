@@ -126,3 +126,27 @@ test('指定した授業日から同じ授業回を参照し、通常時間割�
   for (const key of ['sessions', 'courses']) assert.equal(calendarEntries({ ...input, [key]: input[key].map(row => ({ ...row, deletedAt: '2026-10-09T00:00:00Z' })) }, '2026-10', course.term).some(e => e.kind === 'session'), false);
   assert.equal(calendarEntries(input, '2026-10', '別の学期').some(e => e.kind === 'session'), false);
 });
+
+test('週間表示で重複・同時刻・短時間・離れた予定のクリック領域を分離', async () => {
+  const { layoutTimedWeekEntries, timedRange } = await import('../app/planner-week-layout.ts');
+  const event = (id, start, end) => ({ id, title: id, kind: 'event', at: '2026-10-12T' + start, end: end ? '2026-10-12T' + end : '', time: start, done: false, sourceId: id, detail: '' });
+  const data = [
+    event('A', '13:00', '14:00'),
+    event('B', '13:15', '14:15'),
+    event('C', '13:20', '13:30'),
+    event('D', '15:00', '16:00'),
+    event('E', '15:10', '15:15'),
+    event('F', '17:00', '17:20'),
+  ];
+  const placed = layoutTimedWeekEntries(data, '2026-10-12');
+  assert.equal(placed.length, data.length);
+  assert.deepEqual(new Set(placed.slice(0, 3).map(v => v.lane)).size, 3);
+  assert.ok(placed.slice(0, 3).every(v => v.laneCount === 3));
+  assert.equal(placed.find(v => v.entry.id === 'D').laneCount, 2);
+  assert.equal(placed.find(v => v.entry.id === 'E').laneCount, 2);
+  assert.equal(placed.find(v => v.entry.id === 'F').laneCount, 1);
+  assert.equal(timedRange(event('short', '13:00', '13:05'), '2026-10-12').end, 13 * 60 + 40);
+  assert.equal(timedRange(data[0], '2026-10-13'), null);
+  assert.deepEqual(layoutTimedWeekEntries([event('same1','14:00','14:30'),event('same2','14:00','14:30')], '2026-10-12').map(v=>v.lane), [0,1]);
+  assert.deepEqual(layoutTimedWeekEntries([event('first','14:00','14:30'),event('second','14:30','15:00')], '2026-10-12').map(v=>v.laneCount), [1,1]);
+});
