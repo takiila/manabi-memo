@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { register } from 'node:module';
+register('./tsx-loader.mjs', import.meta.url);
 import { normalizeChecklist, normalizePlanner, projectTodos, homeTodos, calendarEntries, patchChecklist, mergePlanner, normalizeHomeLayout, normalizeSessionDay, memoContentText } from '../app/planner-model.ts';
 import { EMPTY_CAMPUS_STATE } from '../app/campus-model.ts';
 
