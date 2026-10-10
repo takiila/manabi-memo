@@ -151,3 +151,29 @@ test('週間タイムラインの重複予定は別々の操作領域を持ち�
     assert.deepEqual(clicked,['a','b','c']);
   } finally { view.close(); }
 });
+
+test('ホームのクイック登録から予定と資格勉強のToDoをそれぞれ追加できる', async () => {
+  const { PlannerQuickEntry } = await import('../app/planner-quick-entry.tsx');
+  const recorded = [];
+  const view = mount(h(PlannerQuickEntry, { disabled: false, onAddEvent: event => recorded.push({ kind: 'event', event }), onAddTodo: todo => recorded.push({ kind: 'todo', todo }) }));
+  try {
+    view.host.querySelector('details').open = true;
+    click(button(view.host, '＋ ゼミガイダンス'));
+    assert.equal(input(view.host, 'タイトル').value, 'ゼミガイダンス');
+    fill(input(view.host, '予定の日付'), '2026-10-15');
+    click(button(view.host, '追加する'));
+    assert.equal(recorded.length, 1);
+    assert.equal(recorded[0].kind, 'event');
+    assert.equal(recorded[0].event.start, '2026-10-15');
+    click(button(view.host, '＋ 資格勉強'));
+    assert.equal(input(view.host, 'タイトル').value, '資格勉強');
+    fill(input(view.host, '作業予定日'), '2026-10-16');
+    fill(input(view.host, '期限'), '2026-10-20');
+    click(button(view.host, '追加する'));
+    assert.equal(recorded.length, 2);
+    assert.equal(recorded[1].kind, 'todo');
+    assert.equal(recorded[1].todo.workAt, '2026-10-16');
+    assert.equal(recorded[1].todo.due, '2026-10-20');
+    assert.deepEqual(recorded[1].todo.tags, ['資格勉強']);
+  } finally { view.close(); }
+});
