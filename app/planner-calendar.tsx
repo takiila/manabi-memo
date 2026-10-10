@@ -19,7 +19,7 @@ export const CALENDAR_LABELS = { todo: 'ToDo締切', work: '作業予定', assig
 export function PlannerCalendar({ state, onTodo, onCourse, onEvent, onSession }: { state: PlannerInput; onTodo: (id: string) => void; onCourse: (id: string) => void; onEvent: (id: string) => void; onSession: (id: string) => void }) {
   const [month, setMonth] = useState(localPlannerDay().slice(0, 7)); const [day, setDay] = useState(localPlannerDay()); const [term, setTerm] = useState('all');
   const [showDone, setShowDone] = useState(false); const [showClass, setShowClass] = useState(true);
-  const storedView = useSyncExternalStore(subscribeCalendarView, deviceCalendarView, () => 'week');
+  const storedView = useSyncExternalStore<CalendarView>(subscribeCalendarView, deviceCalendarView, () => 'week');
   const [overrideView, setOverrideView] = useState<'week' | 'classes' | 'month' | null>(null);
   const view = overrideView ?? storedView;
   function changeView(next: 'week' | 'classes' | 'month') {
