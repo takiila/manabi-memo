@@ -104,3 +104,27 @@ test('個人予定をカレンダーから開くと、その予定の編集欄�
   const view = mount(h(PlannerPanel, { state: { ...state, planner }, disabled: false, onPatch: noop, onPlanner: noop, onMemo: noop, onCourse: noop, onSession: noop }));
   try { click(button(view.host, '統合カレンダー')); click(button(view.host, '開く')); const selected = view.host.querySelector('.selected-event'); assert.equal(selected.id, 'planner-event-target'); assert.equal(input(selected, 'タイトル').value, '対象の予定'); assert.equal(document.activeElement, selected); } finally { view.close(); }
 });
+
+test('PCは週間スケジュールを初期表示し、大学時間割・月表示に切り替えられる', () => {
+  window.localStorage.removeItem('manabi-calendar-view-v1');
+  const view = mount(h(PlannerCalendar, { state, onTodo: noop, onCourse: noop, onEvent: noop, onSession: noop }));
+  try {
+    assert.equal(button(view.host, '週間スケジュール').getAttribute('aria-pressed'), 'true');
+    assert.ok(view.host.querySelector('.planner-week-hours'));
+    click(button(view.host, '大学時間割'));
+    assert.equal(button(view.host, '大学時間割').getAttribute('aria-pressed'), 'true');
+    assert.equal(view.host.querySelectorAll('.planner-class-row').length, 5);
+    click(button(view.host, '月表示'));
+    assert.ok(view.host.querySelector('.calendar-grid'));
+    assert.equal(window.localStorage.getItem('manabi-calendar-view-v1'), 'month');
+  } finally {
+    view.close();
+    window.localStorage.removeItem('manabi-calendar-view-v1');
+  }
+});
+
+test('週間表示をまたぐ月境界の日付を保持する', async () => {
+  const { datesInWeek, mondayOf } = await import('../app/planner-week-view.tsx');
+  assert.equal(mondayOf('2026-11-01'), '2026-10-26');
+  assert.deepEqual(datesInWeek('2026-11-01'), ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01']);
+});
