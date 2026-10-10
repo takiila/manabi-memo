@@ -6,8 +6,10 @@ type PublicAuthConfig = {
 export type AuthConfigFailure = 'network' | 'timeout' | 'http' | 'invalid';
 
 export class AuthConfigError extends Error {
-  constructor(public readonly reason: AuthConfigFailure, message: string) {
+  readonly reason: AuthConfigFailure;
+  constructor(reason: AuthConfigFailure, message: string) {
     super(message);
+    this.reason = reason;
     this.name = 'AuthConfigError';
   }
 }
