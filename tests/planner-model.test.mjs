@@ -59,8 +59,9 @@ test('バックアップの個人ToDo・予定のID衝突を回避し科目参�
   assert.notEqual(merged.events[0].id, merged.events[1].id);
 });
 test('ホーム設定の旧値を補完し順序重複を除く', () => {
-  assert.deepEqual(normalizeHomeLayout(null), { todo: true, timetable: true, todoFirst: true });
-  assert.deepEqual(normalizeHomeLayout({ todo: false, timetable: false, todoFirst: false }), { todo: false, timetable: false, todoFirst: false });
+  assert.deepEqual(normalizeHomeLayout(null), { todo: true, events: true, timetable: true, todoFirst: true });
+  assert.deepEqual(normalizeHomeLayout({ todo: false, timetable: false, todoFirst: false }), { todo: false, events: true, timetable: false, todoFirst: false });
+  assert.equal(normalizeHomeLayout({ events: false }).events, false);
 });
 
 test('学年暦の授業期間・休講・曜日変更を通常時間割へ反映する', () => {
@@ -151,4 +152,33 @@ test('週間表示で重複・同時刻・短時間・離れた予定のクリ�
   assert.equal(timedRange(data[0], '2026-10-13'), null);
   assert.deepEqual(layoutTimedWeekEntries([event('same1','14:00','14:30'),event('same2','14:00','14:30')], '2026-10-12').map(v=>v.lane), [0,1]);
   assert.deepEqual(layoutTimedWeekEntries([event('first','14:00','14:30'),event('second','14:45','15:15')], '2026-10-12').map(v=>v.laneCount), [1,1]);
+});
+
+test('ホームのクイック登録はゼミガイダンス・通院・資格勉強を既存データに記録する', async () => {
+  const { buildQuickEntry } = await import('../app/planner-quick-entry-model.ts');
+  const base = { kind: 'event', title: 'ゼミガイダンス', day: '2026-10-15', time: '14:00', endTime: '15:00', due: '', workDay: '', workTime: '', note: '大学内の会場', priority: false, tags: [] };
+  const seminar = buildQuickEntry(base, 'seminar');
+  assert.equal(seminar.kind, 'event');
+  assert.equal(seminar.record.start, '2026-10-15T14:00');
+  assert.equal(seminar.record.end, '2026-10-15T15:00');
+  const hospital = buildQuickEntry({ ...base, title: '通院', day: '2026-10-16', time: '09:30', endTime: '', note: '' }, 'clinic');
+  assert.equal(hospital.record.start, '2026-10-16T09:30');
+  assert.equal(hospital.record.end, '');
+  assert.throws(() => buildQuickEntry({ ...base, endTime: '13:00' }, 'invalid'), /終了時刻/);
+  assert.throws(() => buildQuickEntry({ ...base, day: '' }, 'invalid'), /日付/);
+  const study = buildQuickEntry({ ...base, kind: 'todo', title: ' AWS SAA 勉強 ', day: '', time: '', endTime: '',
+    due: '2026-10-20', workDay: '2026-10-17', workTime: '19:00', priority: true, tags: ['資格勉強', '資格勉強', 'AWS'] }, 'study');
+  assert.equal(study.kind, 'todo');
+  assert.equal(study.record.workAt, '2026-10-17T19:00');
+  assert.equal(study.record.due, '2026-10-20');
+  assert.deepEqual(study.record.tags, ['資格勉強','AWS']);
+  assert.equal(study.record.text, 'AWS SAA 勉強');
+  assert.throws(() => buildQuickEntry({ ...base, kind:'todo', workTime:'19:00' }, 'bad'), /作業時刻/);
+  const personalState = { ...state, planner: normalizePlanner({ version:1, todos:[study.record], events:[seminar.record,hospital.record] }) };
+  const entries = calendarEntries(personalState, '2026-10', 'all');
+  assert.ok(entries.some(e => e.kind === 'event' && e.title === 'ゼミガイダンス' && e.time === '14:00'));
+  assert.ok(entries.some(e => e.kind === 'event' && e.title === '通院' && e.time === '09:30'));
+  assert.ok(entries.some(e => e.kind === 'work' && e.title === 'AWS SAA 勉強' && e.time === '19:00'));
+  assert.ok(entries.some(e => e.kind === 'todo' && e.title === 'AWS SAA 勉強' && e.time === ''));
+  assert.equal(homeTodos(projectTodos(personalState), '2026-10-15').some(t => t.title === 'AWS SAA 勉強'), true);
 });
