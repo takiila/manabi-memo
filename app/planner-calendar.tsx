@@ -2,7 +2,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PlannerWeekView, datesInWeek } from './planner-week-view';
 import { addDateDays } from './planner-model';
-import './planner-week.css';
 import { calendarDayEntries, calendarEntries, localPlannerDateTime, localPlannerDay, type PlannerInput, type CalendarEntry } from './planner-model';
 export const CALENDAR_LABELS = { todo: 'ToDo締切', work: '作業予定', assignment: '提出課題', study: '学習', exam: '試験', class: '授業', session: '授業回ノート', event: '個人予定', university: '大学情報' };
 export function PlannerCalendar({ state, onTodo, onCourse, onEvent, onSession }: { state: PlannerInput; onTodo: (id: string) => void; onCourse: (id: string) => void; onEvent: (id: string) => void; onSession: (id: string) => void }) {
