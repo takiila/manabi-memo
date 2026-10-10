@@ -1,22 +1,29 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState, useSyncExternalStore } from 'react';
 import { PlannerWeekView, datesInWeek } from './planner-week-view';
 import { addDateDays } from './planner-model';
 import { calendarDayEntries, calendarEntries, localPlannerDateTime, localPlannerDay, type PlannerInput, type CalendarEntry } from './planner-model';
+type CalendarView = 'week' | 'classes' | 'month';
+function subscribeCalendarView(notify: () => void) {
+  window.addEventListener('storage', notify);
+  return () => window.removeEventListener('storage', notify);
+}
+function deviceCalendarView(): CalendarView {
+  try {
+    const stored = window.localStorage.getItem('manabi-calendar-view-v1');
+    if (stored === 'week' || stored === 'classes' || stored === 'month') return stored;
+    return window.matchMedia?.('(max-width: 700px)').matches ? 'month' : 'week';
+  } catch { return 'week'; }
+}
 export const CALENDAR_LABELS = { todo: 'ToDo締切', work: '作業予定', assignment: '提出課題', study: '学習', exam: '試験', class: '授業', session: '授業回ノート', event: '個人予定', university: '大学情報' };
 export function PlannerCalendar({ state, onTodo, onCourse, onEvent, onSession }: { state: PlannerInput; onTodo: (id: string) => void; onCourse: (id: string) => void; onEvent: (id: string) => void; onSession: (id: string) => void }) {
   const [month, setMonth] = useState(localPlannerDay().slice(0, 7)); const [day, setDay] = useState(localPlannerDay()); const [term, setTerm] = useState('all');
   const [showDone, setShowDone] = useState(false); const [showClass, setShowClass] = useState(true);
-  const [view, setView] = useState<'week' | 'classes' | 'month'>('week');
-  useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem('manabi-calendar-view-v1');
-      if (stored === 'week' || stored === 'classes' || stored === 'month') setView(stored);
-      else if (window.matchMedia?.('(max-width: 700px)').matches) setView('month');
-    } catch { /* No persistent storage: keep the default */ }
-  }, []);
+  const storedView = useSyncExternalStore(subscribeCalendarView, deviceCalendarView, () => 'week');
+  const [overrideView, setOverrideView] = useState<'week' | 'classes' | 'month' | null>(null);
+  const view = overrideView ?? storedView;
   function changeView(next: 'week' | 'classes' | 'month') {
-    setView(next);
+    setOverrideView(next);
     try { window.localStorage.setItem('manabi-calendar-view-v1', next); } catch { /* session only */ }
   }
   const sourceMonths = view === 'month' ? [month] : [...new Set(datesInWeek(day).map(date => date.slice(0, 7)))];
