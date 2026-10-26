@@ -15,6 +15,7 @@ const { SessionStartDialog } = await import('../app/session-start-dialog.tsx');
 const { PlannerPanel } = await import('../app/planner-panel.tsx');
 const { PlannerCalendar } = await import('../app/planner-calendar.tsx');
 const { TaskDates } = await import('../app/memo-checklist.tsx');
+const { UniversityInbox } = await import('../app/university-inbox.tsx');
 const { EMPTY_CAMPUS_STATE } = await import('../app/campus-model.ts');
 const { normalizePlanner, normalizeChecklist } = await import('../app/planner-model.ts');
 
@@ -32,6 +33,42 @@ function fill(el, value) {
 function click(el) { act(() => el.click()); }
 const course = { id: 'c', title: '講義', term: '2026年度 後期', weekday: null, period: null, instructor: '', room: '' };
 const state = { courses: [course], sessions: [], memos: [], campus: EMPTY_CAMPUS_STATE, inbox: { records: [] }, planner: { version: 1, todos: [], events: [] } };
+
+const syntheticIcs = 'BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nUID:example-ui@example.test\nSUMMARY:架空課題の提出期限\nDTSTART:20261026T145900Z\nCATEGORIES:TEST1001\nEND:VEVENT\nEND:VCALENDAR';
+async function chooseFile(host, file) {
+  const control = host.querySelector('input[type=file]');
+  Object.defineProperty(control, 'files', { configurable: true, value: [file] });
+  await act(async () => { control.dispatchEvent(new dom.window.Event('change', { bubbles: true })); await new Promise(resolve => setTimeout(resolve, 30)); });
+}
+test('LMSファイルを選んでも保存せず、プレビューと要確認の承認後だけInboxへ反映する', async () => {
+  let result;
+  const view = mount(h(UniversityInbox, { inbox: { version: 1, records: [] }, courses: [], disabled: false, onChange: noop, onImport: (...args) => result = args }));
+  try {
+    await chooseFile(view.host, { name: 'calendar.ics', size: syntheticIcs.length, type: 'text/calendar', text: async () => syntheticIcs });
+    assert.equal(result, undefined);
+    click(button(view.host, 'JSONを解析して確認'));
+    assert.match(view.host.textContent, /架空課題の提出期限/);
+    const save = button(view.host, '確認した1件を取り込む');
+    assert.equal(save.disabled, true);
+    const review = [...view.host.querySelectorAll('label')].find(label => label.textContent.includes('選択した情報すべての出典'))?.querySelector('input');
+    click(review); assert.equal(save.disabled, false); click(save);
+    assert.equal(result[0].records[0].item.data.due_at, '2026-10-26T14:59:00Z');
+    assert.deepEqual(result[1], []); // No inferred enrolment or shared-calendar write.
+  } finally { view.close(); }
+});
+test('遅いファイル読み込みが、その後に選んだ入力を上書きしない', async () => {
+  let finish;
+  const view = mount(h(UniversityInbox, { inbox: { version: 1, records: [] }, courses: [], disabled: false, onChange: noop, onImport: noop }));
+  try {
+    await chooseFile(view.host, { name: 'calendar.ics', size: syntheticIcs.length, text: () => new Promise(resolve => finish = resolve) });
+    click(button(view.host, 'ゼミのサンプルを表示'));
+    const area = [...view.host.querySelectorAll('textarea')].find(el => !el.readOnly);
+    const current = area.value;
+    await act(async () => { finish(syntheticIcs); await new Promise(resolve => setTimeout(resolve, 30)); });
+    assert.equal(area.value, current);
+    assert.doesNotMatch(area.value, /example-ui/);
+  } finally { view.close(); }
+});
 
 test('授業回0件でも日程登録への操作があり、作成後は日付を変更・解除できる', () => {
   let created = 0; let day = '';

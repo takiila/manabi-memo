@@ -74,7 +74,7 @@ export function informationWarnings(item: ImportItem): string[] {
   const data = { ...(item.type === 'course' ? { term: item.term } : {}), ...item.data } as Record<string, unknown>;
   if (item.type === 'course' && data.term == null) data.term = item.term;
   const warnings = (REQUIRED_FACTS[item.type] ?? []).filter(key => data[key] == null || (Array.isArray(data[key]) && data[key].length === 0)).map(key => `${FIELD_LABELS[key] ?? key}が未確認です。`);
-  if (item.needs_review) warnings.push('AIが確認を必要としています。');
+  if (item.needs_review) warnings.push('この情報には確認が必要です。');
   warnings.push(...(item.uncertainties ?? []));
   for (const [startKey, endKey] of [['starts_at', 'ends_at'], ['application_start', 'application_end'], ['opens_at', 'closes_at']]) {
     const start = data[startKey], end = data[endKey];
@@ -87,6 +87,7 @@ export function planManabiImport(inbox: InformationInbox, bundle: ManabiImport):
   return bundle.items.map(item => {
     const matches = inbox.records.filter(record => identity(record.collection, record.item) === identity(bundle.collection, item));
     const existing = matches[0];
+    const changedIcalType = bundle.collection === 'ical-calendar' && inbox.records.some(record => record.collection === bundle.collection && record.item.id === item.id && record.item.type !== item.type);
     const warnings = informationWarnings(item);
     if ([...inbox.records.filter(record => record.collection === bundle.collection).map(record => record.item), ...bundle.items].some(other => other.id !== item.id && other.type === item.type && other.title.normalize('NFKC').trim() === item.title.normalize('NFKC').trim())) warnings.push('同じタイトルの別IDがあります。重複かどうか確認してください。');
     for (const relatedId of [...(item.related_ids ?? []), ...(item.type === 'laboratory' ? item.data.teacher_ids ?? [] : [])]) {
@@ -95,7 +96,8 @@ export function planManabiImport(inbox: InformationInbox, bundle: ManabiImport):
       else if (item.type === 'laboratory' && item.data.teacher_ids?.includes(relatedId) && related.some(other => other.type !== 'teacher')) warnings.push(`担当教員 ${relatedId} の種別が教員ではありません。`);
     }
     if (matches.length > 1) warnings.push('同じ識別子の情報が複数あります。バックアップ復元で追加された内容を確認してください。');
-    return { item, existing, kind: matches.length > 1 ? 'blocked' : !existing ? 'add' : canonical(existing.item) === canonical(item) ? 'same' : 'update', warnings: Array.from(new Set(warnings)) };
+    if (changedIcalType) warnings.push('同じLMS予定の分類が変わりました。二重登録を避けるため自動更新を停止しました。保存済みの内容と原資料を確認してください。');
+    return { item, existing, kind: matches.length > 1 || changedIcalType ? 'blocked' : !existing ? 'add' : canonical(existing.item) === canonical(item) ? 'same' : 'update', warnings: Array.from(new Set(warnings)) };
   });
 }
 
