@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -66,5 +66,23 @@ test("追跡対象の環境変数例に秘密値を設定しない", () => {
     if (match && sensitiveNames.test(match[1])) {
       assert.equal(match[2].trim(), "", `${match[1]} must remain empty in .env.example`);
     }
+  }
+});
+
+function applicationSources(directory) {
+  return readdirSync(join(repositoryRoot, directory), { withFileTypes: true }).flatMap(entry => {
+    const relative = join(directory, entry.name);
+    if (entry.isDirectory()) return applicationSources(relative);
+    if (!entry.isFile() || !/\.(?:ts|tsx|js|jsx|mjs)$/.test(entry.name)) return [];
+    return [{ file: relative, source: readFileSync(join(repositoryRoot, relative), "utf8") }];
+  });
+}
+
+test("Next.js ImageResponseへ未確認の入力経路を追加しない（GHSA-vcvr-r3jv-pc5j）", () => {
+  // The locked Next.js 16.3.2 contains a vulnerable Node next/og path.
+  // Keep this attack surface unreachable until Next.js is safely upgraded.
+  // This is a compensating guard, not a substitute for a patched dependency.
+  for (const { file, source } of [...applicationSources("app"), ...applicationSources("lib")]) {
+    assert.doesNotMatch(source, /(?:from\s*["']next\/og["']|import\s*\(["']next\/og["']\)|\bImageResponse\s*\()/, file);
   }
 });

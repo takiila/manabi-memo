@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { parseICalendar } from './ical-import-model';
 import { applyManabiImport, FIELD_LABELS, informationWarnings, ITEM_LABELS, MAX_IMPORT_BYTES, parseManabiImport, planManabiImport } from './manabi-import-model';
 import { MANABI_AI_PROMPT } from './manabi-import-prompt';
 import sample from '../examples/manabi-import-seminar.json';
 import courseSample from '../examples/manabi-import-courses.json';
+import academicCalendar from '../examples/gunma-info-2026-academic-calendar.json';
 import catalogSample from '../examples/manabi-import-catalog.json';
 import type { ImportItem, ImportItemType, InformationInbox, ManabiImport } from './manabi-import-types';
 import type { TransferCourse } from './course-transfer';
@@ -38,6 +40,7 @@ export function UniversityInbox({ inbox, courses, disabled, onChange, onImport }
   const [recovery, setRecovery] = useState(false), [courseBaseline, setCourseBaseline] = useState('');
   const [courseTerms, setCourseTerms] = useState<Record<string, string>>({}), [courseSelected, setCourseSelected] = useState<string[]>([]), [courseReviewed, setCourseReviewed] = useState(false);
   const [importMode, setImportMode] = useState<'catalog' | 'register'>('catalog');
+  const inputVersion = useRef(0);
   const rows = bundle ? planManabiImport(inbox, bundle) : [];
   const stale = Boolean((bundle || recovery) && (baseline !== JSON.stringify(inbox) || courseBaseline !== JSON.stringify(courses)));
   const invalidChoice = rows.some(row => selected.includes(row.item.id) && (row.kind === 'blocked' || (row.warnings.length > 0 && !reviewed.includes(row.item.id))));
@@ -48,7 +51,7 @@ export function UniversityInbox({ inbox, courses, disabled, onChange, onImport }
   const invalidCourses = courseSelectionConflict(selectedCourseRows) || selectedCourseRows.some(row => row.kind === 'blocked') || (selectedCourseRows.some(row => row.warnings.length) && !courseReviewed);
   const filtered = inbox.records.filter(record => (!type || record.item.type === type) && (!unreadOnly || record.status === 'unread') && JSON.stringify([record.collection, record.item]).toLocaleLowerCase('ja-JP').includes(query.toLocaleLowerCase('ja-JP')));
   const schedule = filtered.flatMap(record => Object.entries(record.item.data).filter(([key, value]) => typeof value === 'string' && /^(starts_at|due_at|guidance_at|application_start|application_end|result_at|opens_at|closes_at)$/.test(key)).map(([key, value]) => ({ record, key, date: value as string }))).sort((left, right) => Date.parse(left.date) - Date.parse(right.date));
-  function edit(value: string) { setText(value); setBundle(null); setRecovery(false); setSelected([]); setReviewed([]); setMessage(''); }
+  function edit(value: string) { inputVersion.current++; setText(value); setBundle(null); setRecovery(false); setSelected([]); setReviewed([]); setMessage(''); }
   function preview() {
     try {
       const parsed = parseManabiImport(text);
@@ -75,15 +78,25 @@ export function UniversityInbox({ inbox, courses, disabled, onChange, onImport }
   return <section className="university-inbox" aria-label="大学情報Inbox">
     <header><p className="eyebrow">UNIVERSITY INBOX</p><h1>大学情報Inbox</h1><p>大学の案内・ゼミ配属・教員情報を、出典と一緒に整理します。</p><p>ChatGPT / Claude / Gemini / ローカルLLMなど、普段使うAIで資料をJSONに変換してください。まなびメモからAIへの送信やAPI呼び出しはありません。</p></header>
     <CourseCatalog key={JSON.stringify(inbox.catalogProfile ?? null)} inbox={inbox} courses={courses} disabled={disabled} onChange={onChange} onImport={onImport} />
-    <section className="inbox-card" aria-label="AIから情報を取り込む">
-      <h2>AIから情報を取り込む</h2><p>① 依頼文と資料をAIへ渡す → ② JSONを貼る → ③ 解析・確認 → ④ 選んで取り込む</p>
+    <section className="inbox-card" aria-label="AI・LMSから情報を取り込む">
+      <h2>AI・LMSから情報を取り込む</h2><p>① 依頼文と資料をAIへ渡す → ② JSONを貼る → ③ 解析・確認 → ④ 選んで取り込む</p>
+      <p>LMSからエクスポートしたICSファイルは、そのまま選べます。提出期限と開始・終了の案内を分け、下の確認画面で選んで保存します。ファイルに含まれない課題の取得や、LMSとの自動同期は行いません。</p>
       <fieldset><legend>講義情報の取り込み先</legend><label className="inbox-check"><input type="radio" name="course-import-mode" checked={importMode === 'catalog'} onChange={() => { setImportMode('catalog'); setCourseReviewed(false); }} />授業カタログ・Inboxに保存（候補を選ぶまで講義・ノートは作らない）</label><label className="inbox-check"><input type="radio" name="course-import-mode" checked={importMode === 'register'} onChange={() => { setImportMode('register'); setCourseReviewed(false); }} />確認した講義を時間割・ノートにも直接登録</label></fieldset>
-      <div className="inbox-actions"><button type="button" onClick={() => void copyPrompt()}>AI向け依頼文をコピー</button><button type="button" onClick={() => edit(JSON.stringify(catalogSample, null, 2))}>授業カタログのサンプルを表示</button><button type="button" onClick={() => edit(JSON.stringify(courseSample, null, 2))}>講義・時間割のサンプルを表示</button><button type="button" onClick={() => edit(JSON.stringify(sample, null, 2))}>ゼミのサンプルを表示</button><button type="button" onClick={() => setPromptVisible(!promptVisible)}>依頼文を表示</button></div>
+      <div className="inbox-actions"><button type="button" onClick={() => void copyPrompt()}>AI向け依頼文をコピー</button><button type="button" onClick={() => edit(JSON.stringify(academicCalendar, null, 2))}>群馬大学・2026年度学年暦を確認</button><button type="button" onClick={() => edit(JSON.stringify(catalogSample, null, 2))}>授業カタログのサンプルを表示</button><button type="button" onClick={() => edit(JSON.stringify(courseSample, null, 2))}>講義・時間割のサンプルを表示</button><button type="button" onClick={() => edit(JSON.stringify(sample, null, 2))}>ゼミのサンプルを表示</button><button type="button" onClick={() => setPromptVisible(!promptVisible)}>依頼文を表示</button></div>
       {promptVisible && <label>AI向け依頼文（Schemaを含む）<textarea readOnly rows={8} value={MANABI_AI_PROMPT} onFocus={event => event.target.select()} /></label>}
-      <label>JSONファイル<input type="file" accept=".json,application/json" disabled={disabled} onChange={async event => {
+      <label>JSON / LMSカレンダー（ICS）ファイル<input type="file" accept=".json,application/json,.ics,text/calendar" disabled={disabled} onChange={async event => {
         const file = event.target.files?.[0]; event.target.value = ''; if (!file) return;
-        if (file.size > MAX_IMPORT_BYTES) { edit(''); setMessage('JSONは1MB以内にしてください。'); return; }
-        try { edit(await file.text()); } catch { edit(''); setMessage('ファイルを読めませんでした。'); }
+        edit('');
+        const version = inputVersion.current;
+        if (file.size > MAX_IMPORT_BYTES) { setMessage('ファイルは1MB以内にしてください。'); return; }
+        try {
+          const raw = await file.text();
+          const ical = /\.ics$/i.test(file.name) || file.type === 'text/calendar';
+          const value = ical ? JSON.stringify(await parseICalendar(raw), null, 2) : raw;
+          if (version !== inputVersion.current) return;
+          edit(value);
+          if (ical) setMessage('LMSカレンダーを読みました。「JSONを解析して確認」で日時・科目・分類を確認してください。まだ保存していません。');
+        } catch (cause) { if (version === inputVersion.current) setMessage(cause instanceof Error ? cause.message : 'ファイルを読めませんでした。'); }
       }} /></label>
       <label>JSONを貼り付け<textarea rows={10} value={text} onChange={event => edit(event.target.value)} spellCheck={false} placeholder={'{"schema_version":"1.0","collection":"大学・年度の識別子","items":[…]}'} /></label>
       <button type="button" onClick={preview} disabled={disabled || !text.trim()}>JSONを解析して確認</button>

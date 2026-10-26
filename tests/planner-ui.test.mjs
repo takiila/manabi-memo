@@ -1,0 +1,216 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { register } from 'node:module';
+import { JSDOM } from 'jsdom';
+import { createElement as h, act, useState } from 'react';
+
+register('./tsx-loader.mjs', import.meta.url);
+const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost/' });
+Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true });
+Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true });
+dom.window.HTMLElement.prototype.scrollIntoView = function () {};
+const { createRoot } = await import('react-dom/client');
+const { CourseMemoPanel } = await import('../app/course-memo-panel.tsx');
+const { SessionStartDialog } = await import('../app/session-start-dialog.tsx');
+const { PlannerPanel } = await import('../app/planner-panel.tsx');
+const { PlannerCalendar } = await import('../app/planner-calendar.tsx');
+const { TaskDates } = await import('../app/memo-checklist.tsx');
+const { UniversityInbox } = await import('../app/university-inbox.tsx');
+const { EMPTY_CAMPUS_STATE } = await import('../app/campus-model.ts');
+const { normalizePlanner, normalizeChecklist } = await import('../app/planner-model.ts');
+
+const noop = () => {};
+function mount(element) {
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host); act(() => root.render(element));
+  return { host, render: element => act(() => root.render(element)), close: () => { act(() => root.unmount()); host.remove(); } };
+}
+function button(host, text) { const found = [...host.querySelectorAll('button')].find(el => el.textContent === text); assert.ok(found, text); return found; }
+function input(host, label) { const found = [...host.querySelectorAll('label')].find(el => el.textContent.startsWith(label))?.querySelector('input'); assert.ok(found, label); return found; }
+function fill(el, value) {
+  act(() => { Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(el, value); el.dispatchEvent(new dom.window.Event('input', { bubbles: true })); el.dispatchEvent(new dom.window.Event('change', { bubbles: true })); });
+}
+function click(el) { act(() => el.click()); }
+const course = { id: 'c', title: '講義', term: '2026年度 後期', weekday: null, period: null, instructor: '', room: '' };
+const state = { courses: [course], sessions: [], memos: [], campus: EMPTY_CAMPUS_STATE, inbox: { records: [] }, planner: { version: 1, todos: [], events: [] } };
+
+const syntheticIcs = 'BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nUID:example-ui@example.test\nSUMMARY:架空課題の提出期限\nDTSTART:20261026T145900Z\nCATEGORIES:TEST1001\nEND:VEVENT\nEND:VCALENDAR';
+async function chooseFile(host, file) {
+  const control = host.querySelector('input[type=file]');
+  Object.defineProperty(control, 'files', { configurable: true, value: [file] });
+  await act(async () => { control.dispatchEvent(new dom.window.Event('change', { bubbles: true })); await new Promise(resolve => setTimeout(resolve, 30)); });
+}
+test('LMSファイルを選んでも保存せず、プレビューと要確認の承認後だけInboxへ反映する', async () => {
+  let result;
+  const view = mount(h(UniversityInbox, { inbox: { version: 1, records: [] }, courses: [], disabled: false, onChange: noop, onImport: (...args) => result = args }));
+  try {
+    await chooseFile(view.host, { name: 'calendar.ics', size: syntheticIcs.length, type: 'text/calendar', text: async () => syntheticIcs });
+    assert.equal(result, undefined);
+    click(button(view.host, 'JSONを解析して確認'));
+    assert.match(view.host.textContent, /架空課題の提出期限/);
+    const save = button(view.host, '確認した1件を取り込む');
+    assert.equal(save.disabled, true);
+    const review = [...view.host.querySelectorAll('label')].find(label => label.textContent.includes('選択した情報すべての出典'))?.querySelector('input');
+    click(review); assert.equal(save.disabled, false); click(save);
+    assert.equal(result[0].records[0].item.data.due_at, '2026-10-26T14:59:00Z');
+    assert.deepEqual(result[1], []); // No inferred enrolment or shared-calendar write.
+  } finally { view.close(); }
+});
+test('遅いファイル読み込みが、その後に選んだ入力を上書きしない', async () => {
+  let finish;
+  const view = mount(h(UniversityInbox, { inbox: { version: 1, records: [] }, courses: [], disabled: false, onChange: noop, onImport: noop }));
+  try {
+    await chooseFile(view.host, { name: 'calendar.ics', size: syntheticIcs.length, text: () => new Promise(resolve => finish = resolve) });
+    click(button(view.host, 'ゼミのサンプルを表示'));
+    const area = [...view.host.querySelectorAll('textarea')].find(el => !el.readOnly);
+    const current = area.value;
+    await act(async () => { finish(syntheticIcs); await new Promise(resolve => setTimeout(resolve, 30)); });
+    assert.equal(area.value, current);
+    assert.doesNotMatch(area.value, /example-ui/);
+  } finally { view.close(); }
+});
+
+test('授業回0件でも日程登録への操作があり、作成後は日付を変更・解除できる', () => {
+  let created = 0; let day = '';
+  const props = { disabled: false, memos: [], sessions: [], onPatch: noop, onOpen: noop, onCreateSession: () => created++, onSchedule: (_, value) => day = value };
+  const view = mount(h(CourseMemoPanel, props));
+  try {
+    assert.equal(view.host.querySelector('details').open, true);
+    click(button(view.host, '授業回と日付を登録')); assert.equal(created, 1);
+    const session = { id: 's', courseId: 'c', sessionNumber: '1', title: 'ノート', scheduledOn: '' };
+    view.render(h(CourseMemoPanel, { ...props, sessions: [session] }));
+    const date = view.host.querySelector('input[type=date]'); fill(date, '2026-10-12'); assert.equal(day, '2026-10-12');
+    view.render(h(CourseMemoPanel, { ...props, sessions: [{ ...session, scheduledOn: day }] }));
+    assert.equal(date.value, day); fill(date, ''); assert.equal(day, '');
+    view.render(h(CourseMemoPanel, { ...props, sessions: [], disabled: true })); assert.equal(button(view.host, '授業回と日付を登録').disabled, true);
+  } finally { view.close(); }
+});
+test('新規授業回の開始時に日付を選択でき、回数の入力中にもフォーカスを失わない', () => {
+  let result;
+  function Harness() { const [number, setNumber] = useState('1'); return h(SessionStartDialog, { course, schedule: '曜日・時限未設定', sessionNumber: number, setSessionNumber: setNumber, disabled: false, starting: false, progress: { message: '', progress: 0 }, error: '', draftPdf: null, setDraftPdf: noop, onClose: noop, onStart: day => result = day }); }
+  const view = mount(h(Harness));
+  try {
+    fill(input(view.host, '授業日'), '2026-10-12');
+    const number = view.host.querySelector('[aria-label="授業回"]'); number.focus(); fill(number, '12');
+    assert.equal(document.activeElement, number);
+    fill(input(view.host, '授業日'), '2026-10-19'); click(button(view.host, 'この授業のノートを始める')); assert.equal(result, '2026-10-19');
+    fill(number, '1'); assert.equal(input(view.host, '授業日').value, '2026-10-12');
+  } finally { view.close(); }
+});
+test('既存授業回の授業日を続きから開く際も保持し、PDF選択や解除で消さない', () => {
+  let result;
+  const props = { course, schedule: '曜日・時限未設定', sessionNumber: '3', setSessionNumber: noop, disabled: false, starting: false, progress: { message: '', progress: 0 }, error: '', draftPdf: null, setDraftPdf: noop, existing: { scheduledOn: '2026-10-13' }, onClose: noop, onStart: day => result = day };
+  const view = mount(h(SessionStartDialog, props));
+  try {
+    assert.equal(input(view.host, '授業日').value, '2026-10-13');
+    view.render(h(SessionStartDialog, { ...props, draftPdf: new dom.window.File(['pdf'], 'test.pdf') }));
+    click(button(view.host, 'この授業のノートを始める')); assert.equal(result, '2026-10-13');
+    view.render(h(SessionStartDialog, props)); fill(input(view.host, '授業日'), ''); click(button(view.host, 'この授業のノートを続ける')); assert.equal(result, '');
+  } finally { view.close(); }
+});
+test('カレンダーの初期表示が別学期の授業日を隠さず、授業回ノートを開ける', () => {
+  let opened;
+  const today = new Date(); const day = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  const inputState = { ...state, courses: [{ ...course, id: 'old', term: '2025年度 前期' }, course], sessions: [{ id: 's', courseId: 'c', sessionNumber: '1', title: 'ノート', scheduledOn: day }] };
+  const view = mount(h(PlannerCalendar, { state: inputState, onTodo: noop, onCourse: noop, onEvent: noop, onSession: id => opened = id }));
+  try { assert.equal(view.host.querySelector('select').value, 'all'); click(button(view.host, '開く')); assert.equal(opened, 's'); } finally { view.close(); }
+});
+test('期限の日付・時刻・作業予定を別々に変更し、期限を空に戻せる', () => {
+  let result;
+  function Harness() { const [item, setItem] = useState({ due: '', workAt: '', priority: false }); return h(TaskDates, { item, onChange: patch => { result = { ...item, ...patch }; normalizeChecklist([{ id: 'i', text: 'todo', done: false, registered: true, ...result }]); setItem(result); } }); }
+  const view = mount(h(Harness));
+  try { fill(input(view.host, '期限の日付'), '2026-10-12'); fill(input(view.host, '期限の時刻'), '13:00'); assert.equal(result.due, '2026-10-12T13:00'); fill(input(view.host, '作業する日時'), '2026-10-11T10:00'); assert.equal(result.workAt, '2026-10-11T10:00'); fill(input(view.host, '期限の日付'), ''); assert.equal(result.due, ''); assert.equal(input(view.host, '期限の時刻').disabled, true); } finally { view.close(); }
+});
+test('個人予定を繰り返し編集しても入力欄が再作成されず、保存・ごみ箱・復元が反映される', () => {
+  let saved; let externalUpdate;
+  function Harness() { const [planner, setPlanner] = useState({ ...state.planner, events: [{ id: 'e', title: '予定', start: '2026-10-12', end: '', note: '', deletedAt: null }] }); externalUpdate = setPlanner; return h(PlannerPanel, { state: { ...state, planner }, disabled: false, onPatch: noop, onPlanner: value => { saved = normalizePlanner(value); setPlanner(saved); }, onMemo: noop, onCourse: noop, onSession: noop }); }
+  const view = mount(h(Harness));
+  try {
+    click(button(view.host, '個人予定・ごみ箱')); const editor = view.host.querySelector('.calendar-agenda .event-editor'); const title = input(editor, 'タイトル');
+    fill(title, '変更した予定'); title.focus(); click(button(editor, '更新')); assert.equal(saved.events[0].title, '変更した予定'); assert.equal(input(editor, 'タイトル'), title);
+    fill(input(editor, '開始日'), '2026-10-14'); click(button(editor, '更新')); assert.equal(saved.events[0].start, '2026-10-14');
+    act(() => externalUpdate({ ...saved, events: [{ ...saved.events[0], title: '別端末からの変更', start: '2026-10-15' }] }));
+    assert.equal(input(editor, 'タイトル'), title); assert.equal(title.value, '別端末からの変更'); assert.equal(input(editor, '開始日').value, '2026-10-15');
+    click(button(view.host, 'ごみ箱へ')); assert.ok(saved.events[0].deletedAt); click(button(view.host, '復元')); assert.equal(saved.events[0].deletedAt, null);
+  } finally { view.close(); }
+});
+
+test('個人予定をカレンダーから開くと、その予定の編集欄を選択してフォーカスする', () => {
+  const today = new Date(); const day = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  const planner = { ...state.planner, events: [{ id: 'other', title: '別の予定', start: '2025-01-01', end: '', note: '', deletedAt: null }, { id: 'target', title: '対象の予定', start: day, end: '', note: '', deletedAt: null }] };
+  const view = mount(h(PlannerPanel, { state: { ...state, planner }, disabled: false, onPatch: noop, onPlanner: noop, onMemo: noop, onCourse: noop, onSession: noop }));
+  try { click(button(view.host, '統合カレンダー')); click(button(view.host, '開く')); const selected = view.host.querySelector('.selected-event'); assert.equal(selected.id, 'planner-event-target'); assert.equal(input(selected, 'タイトル').value, '対象の予定'); assert.equal(document.activeElement, selected); } finally { view.close(); }
+});
+
+test('PCは週間スケジュールを初期表示し、大学時間割・月表示に切り替えられる', () => {
+  window.localStorage.removeItem('manabi-calendar-view-v1');
+  const view = mount(h(PlannerCalendar, { state, onTodo: noop, onCourse: noop, onEvent: noop, onSession: noop }));
+  try {
+    assert.equal(button(view.host, '週間スケジュール').getAttribute('aria-pressed'), 'true');
+    assert.ok(view.host.querySelector('.planner-week-hours'));
+    click(button(view.host, '大学時間割'));
+    assert.equal(button(view.host, '大学時間割').getAttribute('aria-pressed'), 'true');
+    assert.equal(view.host.querySelectorAll('.planner-class-row').length, 5);
+    click(button(view.host, '月表示'));
+    assert.ok(view.host.querySelector('.calendar-grid'));
+    assert.equal(window.localStorage.getItem('manabi-calendar-view-v1'), 'month');
+  } finally {
+    view.close();
+    window.localStorage.removeItem('manabi-calendar-view-v1');
+  }
+});
+
+test('週間表示をまたぐ月境界の日付を保持する', async () => {
+  const { datesInWeek, mondayOf } = await import('../app/planner-week-view.tsx');
+  assert.equal(mondayOf('2026-11-01'), '2026-10-26');
+  assert.deepEqual(datesInWeek('2026-11-01'), ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01']);
+});
+
+test('週間タイムラインの重複予定は別々の操作領域を持ち元データを開ける', async () => {
+  const { PlannerWeekView } = await import('../app/planner-week-view.tsx');
+  const entries = [
+    { id:'a', title:'講義のあとに打ち合わせ',kind:'event',at:'2026-10-12T13:00',end:'2026-10-12T14:00',time:'13:00',done:false,sourceId:'a',detail:'' },
+    { id:'b', title:'13時15分の予定',kind:'event',at:'2026-10-12T13:15',end:'2026-10-12T14:15',time:'13:15',done:false,sourceId:'b',detail:'' },
+    { id:'c', title:'短い確認',kind:'event',at:'2026-10-12T13:20',end:'2026-10-12T13:25',time:'13:20',done:false,sourceId:'c',detail:'' },
+  ];
+  const clicked=[];
+  const view = mount(h(PlannerWeekView,{ entries,selectedDay:'2026-10-12',mode:'week',onDay:noop,onOpen: entry=>clicked.push(entry.id) }));
+  try {
+    const chips=[...view.host.querySelectorAll('.planner-week-timed')];
+    assert.equal(chips.length,3);
+    assert.deepEqual(chips.map(el=>el.getAttribute('data-lane')),['0','1','2']);
+    assert.ok(chips.every(el=>el.getAttribute('data-lane-count')==='3'));
+    for(const chip of chips) {
+      const btn=chip.querySelector('button');
+      assert.ok(btn?.getAttribute('aria-label')?.includes('予定') || btn?.getAttribute('aria-label')?.includes('確認') || btn?.getAttribute('aria-label')?.includes('打ち合わせ'));
+      click(btn);
+    }
+    assert.deepEqual(clicked,['a','b','c']);
+  } finally { view.close(); }
+});
+
+test('ホームのクイック登録から予定と資格勉強のToDoをそれぞれ追加できる', async () => {
+  const { PlannerQuickEntry } = await import('../app/planner-quick-entry.tsx');
+  const recorded = [];
+  const view = mount(h(PlannerQuickEntry, { disabled: false, onAddEvent: event => recorded.push({ kind: 'event', event }), onAddTodo: todo => recorded.push({ kind: 'todo', todo }) }));
+  try {
+    view.host.querySelector('details').open = true;
+    click(button(view.host, '＋ ゼミガイダンス'));
+    assert.equal(input(view.host, 'タイトル').value, 'ゼミガイダンス');
+    fill(input(view.host, '予定の日付'), '2026-10-15');
+    click(button(view.host, '追加する'));
+    assert.equal(recorded.length, 1);
+    assert.equal(recorded[0].kind, 'event');
+    assert.equal(recorded[0].event.start, '2026-10-15');
+    click(button(view.host, '＋ 資格勉強'));
+    assert.equal(input(view.host, 'タイトル').value, '資格勉強');
+    fill(input(view.host, '作業予定日'), '2026-10-16');
+    fill(input(view.host, '期限'), '2026-10-20');
+    click(button(view.host, '追加する'));
+    assert.equal(recorded.length, 2);
+    assert.equal(recorded[1].kind, 'todo');
+    assert.equal(recorded[1].todo.workAt, '2026-10-16');
+    assert.equal(recorded[1].todo.due, '2026-10-20');
+    assert.deepEqual(recorded[1].todo.tags, ['資格勉強']);
+  } finally { view.close(); }
+});

@@ -1,3 +1,4 @@
+import { EMPTY_PLANNER, mergePlanner, type PlannerState } from "./planner-model.ts";
 import type { CampusGpaProfile, CampusGradePlan, CampusState } from "./campus-model";
 import { mergeInformationInboxes } from "./manabi-import-model.ts";
 import type { InformationInbox } from "./manabi-import-types";
@@ -41,6 +42,7 @@ type MergeState<TCourse extends MergeCourse, TSession extends MergeSession, TMem
   tutorialSeen: boolean;
   campus: CampusState;
   inbox?: InformationInbox;
+  planner?: PlannerState;
   displayPreferences: unknown;
 };
 
@@ -140,6 +142,7 @@ export function mergeImportedState<
       tutorialSeen: existing.tutorialSeen,
       campus: mergeCampusImported(existing.campus, incoming.campus, courseIds.firstIds),
       inbox: mergeInformationInboxes(existing.inbox, incoming.inbox),
+      planner: mergePlanner(existing.planner ?? EMPTY_PLANNER, incoming.planner ?? EMPTY_PLANNER, courseIds.firstIds),
       displayPreferences: existing.displayPreferences,
     } as TState,
     pdfs: pdfs.map((entry) => ({ ...entry, id: sessionMap.get(entry.id) ?? entry.id })),

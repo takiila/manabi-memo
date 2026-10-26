@@ -61,15 +61,16 @@ test("上限超過PDFはpdf.jsを起動せずに拒否する", async () => {
 });
 
 test("主要導線とモバイル向けレイアウト契約を保つ", async () => {
-  const [page, css] = await Promise.all([
+  const [page, css, sessionDialog] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/session-start-dialog.tsx", import.meta.url), "utf8"),
   ]);
   for (const label of ["講義を追加", "PDFを追加", "ノートを見返す", "Campus Muster", "設定"]) {
     assert.match(page, new RegExp(label));
   }
-  assert.match(page, /PDFなしでも始められます/);
-  assert.match(page, /PDFはこの端末内で処理/);
+  assert.match(sessionDialog, /PDFなしでも始められます/);
+  assert.match(sessionDialog, /PDFはこの端末内で処理/);
   assert.match(page, /端末データの読込を再試行/);
   assert.match(page, /サイトデータを消さずにバックアップまたは復旧相談/);
   assert.match(css, /@media \(max-width: 620px\)/);

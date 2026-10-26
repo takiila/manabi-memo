@@ -1,0 +1,653 @@
+{
+  "schema_version": "1.0",
+  "collection": "gunma-info-2026-academic-calendar-0313",
+  "items": [
+    {
+      "id": "fall-teaching",
+      "type": "event",
+      "title": "後期授業期間",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2026-10-01",
+        "ends_at": "2027-02-01"
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "添付学年暦の記載。時刻は指定されていません。",
+      "extensions": {
+        "x-class-calendar": "teaching_period"
+      }
+    },
+    {
+      "id": "fall-registration",
+      "type": "event",
+      "title": "後期履修登録期間",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2026-10-01",
+        "ends_at": "2026-10-15"
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "添付学年暦の記載。時刻は指定されていません。"
+    },
+    {
+      "id": "fall-monday",
+      "type": "event",
+      "title": "月曜日の授業（曜日変更）",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2026-10-15",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "添付学年暦の記載。時刻は指定されていません。",
+      "extensions": {
+        "x-class-weekday": 1
+      }
+    },
+    {
+      "id": "dean-meeting",
+      "type": "event",
+      "title": "学部長と学生との懇談会",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2026-10-28",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "添付学年暦の記載。時刻は指定されていません。"
+    },
+    {
+      "id": "cancel-registration",
+      "type": "event",
+      "title": "履修登録取消期間",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2026-11-05",
+        "ends_at": "2026-11-18"
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "添付学年暦の記載。時刻は指定されていません。"
+    },
+    {
+      "id": "sports",
+      "type": "event",
+      "title": "スポーツ大会",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2026-11-04",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "添付学年暦の記載。時刻は指定されていません。"
+    },
+    {
+      "id": "makeup-dec",
+      "type": "event",
+      "title": "補講日（通常時間割なし）",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2026-12-25",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "添付学年暦の記載。時刻は指定されていません。",
+      "extensions": {
+        "x-class-calendar": "no_class"
+      }
+    },
+    {
+      "id": "fall-wednesday",
+      "type": "event",
+      "title": "水曜日の授業（曜日変更）",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2026-12-28",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "添付学年暦の記載。時刻は指定されていません。",
+      "extensions": {
+        "x-class-weekday": 3
+      }
+    },
+    {
+      "id": "winter-break",
+      "type": "event",
+      "title": "冬季休業",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2026-12-29",
+        "ends_at": "2027-01-03"
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "添付学年暦の記載。時刻は指定されていません。",
+      "extensions": {
+        "x-class-calendar": "no_class"
+      }
+    },
+    {
+      "id": "restart",
+      "type": "event",
+      "title": "授業再開",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2027-01-04",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "添付学年暦の記載。時刻は指定されていません。"
+    },
+    {
+      "id": "exam-preparation",
+      "type": "event",
+      "title": "大学入学共通テスト準備（休講）",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2027-01-15",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "添付学年暦の記載。時刻は指定されていません。",
+      "extensions": {
+        "x-class-calendar": "no_class"
+      }
+    },
+    {
+      "id": "english-exam",
+      "type": "event",
+      "title": "統一英語試験（1・2年、休講）",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2027-01-27",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "添付学年暦の記載。時刻は指定されていません。",
+      "extensions": {
+        "x-class-calendar": "no_class"
+      }
+    },
+    {
+      "id": "makeup-jan",
+      "type": "event",
+      "title": "補講日（通常時間割なし）",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2027-01-28",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "添付学年暦の記載。時刻は指定されていません。",
+      "extensions": {
+        "x-class-calendar": "no_class"
+      }
+    },
+    {
+      "id": "english-exam-backup",
+      "type": "event",
+      "title": "統一英語試験予備日",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2027-01-30",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "添付学年暦の記載。時刻は指定されていません。"
+    },
+    {
+      "id": "fall-final-exams",
+      "type": "event",
+      "title": "後期期末試験期間",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2027-02-02",
+        "ends_at": "2027-02-08"
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "添付学年暦の記載。時刻は指定されていません。"
+    },
+    {
+      "id": "year-end-break",
+      "type": "event",
+      "title": "学年末休業",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2027-02-09",
+        "ends_at": "2027-03-31"
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "添付学年暦の記載。時刻は指定されていません。",
+      "extensions": {
+        "x-class-calendar": "no_class"
+      }
+    },
+    {
+      "id": "graduation",
+      "type": "event",
+      "title": "学位記授与式・伝達式",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2027-03-25",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "添付学年暦の記載。時刻は指定されていません。"
+    },
+    {
+      "id": "holiday-2026-10-12",
+      "type": "event",
+      "title": "祝日（通常授業なし）",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2026-10-12",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "添付学年暦の記載。時刻は指定されていません。",
+      "extensions": {
+        "x-class-calendar": "no_class"
+      }
+    },
+    {
+      "id": "holiday-2026-11-03",
+      "type": "event",
+      "title": "祝日（通常授業なし）",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2026-11-03",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "添付学年暦の記載。時刻は指定されていません。",
+      "extensions": {
+        "x-class-calendar": "no_class"
+      }
+    },
+    {
+      "id": "holiday-2026-11-23",
+      "type": "event",
+      "title": "祝日（通常授業なし）",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2026-11-23",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "添付学年暦の記載。時刻は指定されていません。",
+      "extensions": {
+        "x-class-calendar": "no_class"
+      }
+    },
+    {
+      "id": "holiday-2027-01-11",
+      "type": "event",
+      "title": "祝日（通常授業なし）",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2027-01-11",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "添付学年暦の記載。時刻は指定されていません。",
+      "extensions": {
+        "x-class-calendar": "no_class"
+      }
+    },
+    {
+      "id": "intensive-2026-12-12",
+      "type": "event",
+      "title": "集中講義日",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2026-12-12",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "集中講義の日程です。受講科目のシラバス・時間割を確認してください。"
+    },
+    {
+      "id": "intensive-2026-12-13",
+      "type": "event",
+      "title": "集中講義日",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2026-12-13",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "集中講義の日程です。受講科目のシラバス・時間割を確認してください。"
+    },
+    {
+      "id": "intensive-2026-12-19",
+      "type": "event",
+      "title": "集中講義日",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2026-12-19",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "集中講義の日程です。受講科目のシラバス・時間割を確認してください。"
+    },
+    {
+      "id": "intensive-2026-12-20",
+      "type": "event",
+      "title": "集中講義日",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2026-12-20",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "集中講義の日程です。受講科目のシラバス・時間割を確認してください。"
+    },
+    {
+      "id": "intensive-2027-02-09",
+      "type": "event",
+      "title": "集中講義日",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2027-02-09",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "集中講義の日程です。受講科目のシラバス・時間割を確認してください。"
+    },
+    {
+      "id": "intensive-2027-02-10",
+      "type": "event",
+      "title": "集中講義日",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2027-02-10",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "集中講義の日程です。受講科目のシラバス・時間割を確認してください。"
+    },
+    {
+      "id": "intensive-2027-02-12",
+      "type": "event",
+      "title": "集中講義日",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2027-02-12",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "集中講義の日程です。受講科目のシラバス・時間割を確認してください。"
+    },
+    {
+      "id": "intensive-2027-02-15",
+      "type": "event",
+      "title": "集中講義日",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2027-02-15",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "集中講義の日程です。受講科目のシラバス・時間割を確認してください。"
+    },
+    {
+      "id": "intensive-2027-02-16",
+      "type": "event",
+      "title": "集中講義日",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2027-02-16",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "集中講義の日程です。受講科目のシラバス・時間割を確認してください。"
+    },
+    {
+      "id": "intensive-2027-02-17",
+      "type": "event",
+      "title": "集中講義日",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2027-02-17",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "集中講義の日程です。受講科目のシラバス・時間割を確認してください。"
+    },
+    {
+      "id": "intensive-2027-02-18",
+      "type": "event",
+      "title": "集中講義日",
+      "term": "2026年度 後期",
+      "source": {
+        "kind": "pdf",
+        "title": "令和8年度 情報学部学年暦（3/13現在）",
+        "locator": "1ページ"
+      },
+      "data": {
+        "starts_at": "2027-02-18",
+        "ends_at": null
+      },
+      "tags": [
+        "学年暦"
+      ],
+      "summary": "集中講義の日程です。受講科目のシラバス・時間割を確認してください。"
+    }
+  ]
+}
