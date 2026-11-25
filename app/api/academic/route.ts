@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
 import { accountForRequest } from '../../server-auth-response';
+import { parseAllowedAccountEmails } from '@/lib/server/account-access-policy';
 import { readAcademicAccount,writeAcademicAccount } from '@/lib/server/academic-service';
 const json=(value:unknown,status=200)=>NextResponse.json(value,{status,headers:{'cache-control':'no-store'}});
 async function authorize(request:Request){
   if(process.env.MANABI_ACADEMIC_API_ENABLED!=='true')return {response:json({error:'学業連携APIは無効です。'},503)} as const;
+  const allowed=parseAllowedAccountEmails(process.env.ALLOWED_ACCOUNT_EMAILS);
+  if(!allowed.length||allowed.length>3)return {response:json({error:'学業連携の許可アカウントが設定されていません。'},503)} as const;
   if(!/^Bearer [^ ]+$/.test(request.headers.get('authorization')??''))return {response:json({error:'認証が必要です。'},401)} as const;
   return accountForRequest(request);
 }

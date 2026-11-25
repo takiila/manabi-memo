@@ -19,7 +19,7 @@ type Identity={user_id:string;identity_issuer:string;identity_subject:string;ema
 type CodeRow=Identity&{code_hash:string;redirect_uri:string;challenge:string;used_at:number|null};
 type LinkRow=Identity&{id:string;revoked_at:number|null};
 type TokenRow=LinkRow&{token_hash:string;token_expires_at:number;used_at:number|null;kind:string};
-function validLink(row:LinkRow,config:OAuthConfig,now:number){return row.revoked_at===null&&row.expires_at>now&&row.client_id===config.clientId&&row.resource===config.resource&&allowed(row.email)&&row.scope.split(' ').includes(READ_SCOPE);}
+function validLink(row:LinkRow,config:OAuthConfig,now:number){return row.identity_issuer==='https://securetoken.google.com/'+process.env.FIREBASE_PROJECT_ID?.trim()&&row.revoked_at===null&&row.expires_at>now&&row.client_id===config.clientId&&row.resource===config.resource&&allowed(row.email)&&row.scope.split(' ').includes(READ_SCOPE);}
 async function identityStillLinked(tx:DatabaseTransaction,row:Identity){
   return Boolean((await tx.queryAll<{account_id:string}>('SELECT account_id FROM auth_identities WHERE issuer = ? AND subject = ? AND account_id = ?',[row.identity_issuer,row.identity_subject,row.user_id]))[0]);
 }
@@ -46,7 +46,7 @@ export async function exchangeCode(params:URLSearchParams,config:OAuthConfig){
   const now=Date.now();
   return withTransaction(async tx=>{
     const row=(await tx.queryAll<CodeRow>('SELECT * FROM academic_oauth_codes WHERE code_hash = ?',[hashToken(raw)]))[0];
-    if(!row||row.used_at!==null||row.expires_at<=now||row.client_id!==config.clientId||row.resource!==config.resource||row.redirect_uri!==redirect||!allowed(row.email)||!pkceMatches(verifier,row.challenge)||!await identityStillLinked(tx,row))return null;
+    if(!row||row.identity_issuer!=='https://securetoken.google.com/'+process.env.FIREBASE_PROJECT_ID?.trim()||row.used_at!==null||row.expires_at<=now||row.client_id!==config.clientId||row.resource!==config.resource||row.redirect_uri!==redirect||!allowed(row.email)||!pkceMatches(verifier,row.challenge)||!await identityStillLinked(tx,row))return null;
     const used=await tx.execute('UPDATE academic_oauth_codes SET used_at = ? WHERE code_hash = ? AND used_at IS NULL AND expires_at > ?',[now,row.code_hash,now]);
     if(used.changes!==1)return null;
     const link:LinkRow={...row,id:crypto.randomUUID(),expires_at:now+LINK_MS,revoked_at:null};

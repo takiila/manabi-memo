@@ -47,7 +47,7 @@ export function compactSummary(body:unknown,term?:string){
  const byDate=(list:Record<string,unknown>[],key:string,reverse=false)=>[...list].sort((a,b)=>(reverse?-1:1)*String(a[key]??'').localeCompare(String(b[key]??'')));
  return {...body,data:{universityCoverage:'unverified',activeTerm:data.activeTerm,selectedTerm:selected,
    courses:cap('courses',courses,100),
-   assignments:cap('assignments',byDate(rows(data.assignments).filter(row=>ids.has(row.courseId)).sort((a,b)=>Number(a.status==='done')-Number(b.status==='done')),'dueISO'),150),
+   assignments:cap('assignments',byDate(rows(data.assignments).filter(row=>ids.has(row.courseId)),'dueISO').sort((a,b)=>Number(a.status==='done')-Number(b.status==='done')),150),
    exams:cap('exams',byDate(rows(data.exams).filter(row=>ids.has(row.courseId)),'datetime'),100),
    attendance:cap('attendance',byDate(rows(data.attendance).filter(row=>ids.has(row.courseId)),'dateISO',true),150),
    learning:cap('learning',byDate(rows(data.learning).filter(row=>ids.has(row.courseId)),'day',true),150),
