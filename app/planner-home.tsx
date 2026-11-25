@@ -32,8 +32,9 @@ export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAd
     }
   });
   const [error, setError] = useState('');
-  const [brief, setBrief] = useState('');
+  const [briefOpen, setBriefOpen] = useState(false);
   const [briefMessage, setBriefMessage] = useState('');
+  const brief = briefOpen && !disabled && onBuildBrief ? onBuildBrief() : '';
   function change(next: HomeLayout) {
     setLayout(next);
     try { localStorage.setItem(KEY, JSON.stringify(next)); setError(''); }
@@ -83,7 +84,7 @@ export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAd
     </section>
     {academic && <section className="planner-home-card" aria-label="学業の優先事項">
       <div className="planner-heading"><div><small>登録済みの課題・試験・大学情報</small><h2>今、優先すること</h2></div>
-        {onBuildBrief && <button type="button" onClick={() => { setBrief(onBuildBrief()); setBriefMessage(''); }}>ChatGPTへの相談文を作る</button>}
+        {onBuildBrief && <button type="button" onClick={() => { setBriefOpen(true); setBriefMessage(''); }}>ChatGPTへの相談文を作る</button>}
       </div>
       {brief && <div className="todo-detail">
         <p>相談文を確認してから、ご自身のChatGPTへ貼り付けてください。ノート本文・PDF・アカウント情報は含みません。</p>
@@ -92,7 +93,7 @@ export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAd
           try { await navigator.clipboard.writeText(brief); setBriefMessage('相談文をコピーしました。'); }
           catch { setBriefMessage('自動コピーできませんでした。上の相談文を選択してコピーしてください。'); }
         }}>相談文をコピー</button>
-        <button type="button" onClick={() => { setBrief(''); setBriefMessage(''); }}>閉じる</button>
+        <button type="button" onClick={() => { setBriefOpen(false); setBriefMessage(''); }}>閉じる</button>
         {briefMessage && <p role="status">{briefMessage}</p>}
       </div>}
       {!academic.items.length && <p>該当する登録済み情報はありません。未取得の課題・試験は含まれません。</p>}

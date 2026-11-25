@@ -263,6 +263,12 @@ test('ChatGPT相談文は利用者の操作で生成され、閉じるまで送�
     click(button(view.host, 'ChatGPTへの相談文を作る'));
     assert.equal(count, 1);
     assert.equal(view.host.querySelector('textarea[aria-label="ChatGPTへの相談文"]').value, '今日の相談文');
+    view.render(h(PlannerHome, { rows: [], events: [], disabled: true, onOpen: noop, onOpenEvents: noop, onAddEvent: noop, onAddTodo: noop,
+      academic: { items: [], onOpen: noop } }, h('div', null, '時間割')));
+    assert.equal(view.host.querySelector('textarea[aria-label="ChatGPTへの相談文"]'), null);
+    view.render(h(PlannerHome, { rows: [], events: [], disabled: false, onOpen: noop, onOpenEvents: noop, onAddEvent: noop, onAddTodo: noop,
+      academic: { items: [], onOpen: noop }, onBuildBrief: () => '現在の情報' }, h('div', null, '時間割')));
+    assert.equal(view.host.querySelector('textarea[aria-label="ChatGPTへの相談文"]').value, '現在の情報');
     click(button(view.host, '閉じる'));
     assert.equal(view.host.querySelector('textarea[aria-label="ChatGPTへの相談文"]'), null);
   } finally { view.close(); }

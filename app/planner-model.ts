@@ -278,7 +278,7 @@ export function academicPriorities(state: PlannerInput, term: string, now = new 
 /** Explicit, plain-text handoff; no account information, note bodies, PDFs or URLs. */
 export function academicBrief(state: PlannerInput, term: string, now = new Date()): string {
   const today = localPlannerDay(now);
-  const clean = (text: string) => text.replace(/[\r\n\t\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 200);
+  const clean = (text: string) => Array.from(text, char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127 ? ' ' : char).join('').trim().slice(0, 200);
   const classes = homeAttendanceRows(state, today, term);
   const pending = catchUpAttendanceRows(state, today, term);
   const priorities = academicPriorities(state, term, now);
