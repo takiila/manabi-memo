@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { parseManabiImport, planManabiImport, applyManabiImport, normalizeInformationInbox, mergeInformationInboxes, recordCalendarFileAttempt } from '../app/manabi-import-model.ts';
+import { parseManabiImport, planManabiImport, applyManabiImport, normalizeInformationInbox, mergeInformationInboxes, missingCourseReviewItems, recordCalendarFileAttempt } from '../app/manabi-import-model.ts';
 import { createBackupFile, inspectBackupFile } from '../app/backup.ts';
 import { mergeImportedState } from '../app/data-migration-model.ts';
 import { normalizeCampusState } from '../app/campus-model.ts';
@@ -139,4 +139,22 @@ test('ICS確認記録は最終成功と直近の失敗を独立に保持し、�
   assert.deepEqual(normalizeInformationInbox(merged), merged);
   assert.deepEqual(mergeInformationInboxes(merged, first), merged);
   assert.throws(() => recordCalendarFileAttempt(first, { ...failure, reason: 'arbitrary raw error' }));
+});
+test('科目巡回の再取得時刻だけでは変更せず、確認範囲内の欠落も自動削除しない', () => {
+  const observed = (id, checkedAt) => item({
+    id, title: id, extensions: { 'x-review-scope': 'course-42', 'x-observed-at': checkedAt },
+  });
+  const checkedAt = '2026-11-26T03:00:00+09:00';
+  const later = '2026-11-27T03:00:00+09:00';
+  const scan = items => ({ ...bundle(items), collection: 'gunma-course-review-2026' });
+  const first = observed('review-1', checkedAt), second = observed('review-2', checkedAt);
+  const inbox = commit(empty(), scan([first, second]));
+  const next = scan([observed('review-1', later)]);
+  assert.equal(planManabiImport(inbox, next)[0].kind, 'same');
+  assert.deepEqual(missingCourseReviewItems(inbox, next).map(record => record.item.id), ['review-2']);
+  assert.equal(applyManabiImport(inbox, next, [], [], JSON.stringify(inbox)).records.length, 2);
+  const changed = scan([{ ...next.items[0], summary: '締切変更' }]);
+  assert.equal(planManabiImport(inbox, changed)[0].kind, 'update');
+  const updated = commit(inbox, changed);
+  assert.equal(planManabiImport(updated, scan([first]))[0].kind, 'blocked');
 });

@@ -36,6 +36,18 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
   const local = { activeTerm:"T", courses: [{id:"c1",title:"Test course",term:"T",weekday:1,period:1}], campus:{assignments:[],exams:[],attendanceRecords:[],studyEvidence:[]}, sessions: [{ id: "lecture-1", scheduledOn: "2026-10-09", hasPdf: true, fileName: "lecture.pdf", pageCount: 10, lastPdfPage: 7, pageTexts: ["not uploaded"], topics: [{ title: "not uploaded" }], noteText: "lecture note" }], memos: [{ id: "memo-1", sessionId: "lecture-1", page: 7, text: "page seven memo", checklist: [{ id: "check-1", text: "review proof", done: false, registered: true, due: "2026-10-09", priority: true, workAt: "", deletedAt: null }] }], planner: { version: 1, todos: [{ id: "personal-1", text: "review material", done: false, registered: true, due: "", priority: false, workAt: "", deletedAt: null, courseId: "", tags: ["review"] }], events: [{ id: "event-1", title: "appointment", start: "2026-10-10", end: "", note: "", deletedAt: null }] } };
+  const imported = (type, summary, data, id) => ({
+    id, collection: "gunma-course-review-2026", updatedAt: "2026-11-26T04:19:12+09:00",
+    item: { id, type, title: id, term: "T", summary, data,
+      uncertainties: ["Confirm in university system"],
+      source: { kind: "web", title: "Synthetic source", url: "https://private.example.test/" },
+      extensions: { "x-observed-at": "2026-11-26T04:19:12+09:00", "x-course-code": "TEST1" } }
+  });
+  local.inbox = { version: 1, records: [
+    imported("assignment", "Conflicting deadline", {}, "assignment-fixture"),
+    imported("exam", "Scope unconfirmed", { starts_at: "2026-12-01" }, "exam-fixture"),
+    imported("announcement", "Report 40%; attendance required; lesson 7 published", {}, "evaluation-fixture"),
+  ] };
   const cloud = referencesForSync(local, { "lecture-1": "a".repeat(64) });
   const body = (state, baseRevision = 0, deviceId = "desktop") => JSON.stringify({ baseRevision, schemaVersion: 15, state, pdfIds: [], pdfs: [], deviceId: `test-device-${deviceId}` });
   assert.equal((await request("/api/sync/state", { method: "POST", headers, body: body(local) })).status, 400);
@@ -100,6 +112,11 @@ try {
     assert.equal(snapshot.body.result.isError,false,JSON.stringify(snapshot.body));
     assert.equal(snapshot.body.result.structuredContent.data.courses[0].id,"c1");
     assert.ok(!JSON.stringify(snapshot.body).includes("lecture note"));
+    assert.ok(!JSON.stringify(snapshot.body).includes("private.example.test"));
+    const observed = snapshot.body.result.structuredContent.data.university;
+    assert.equal(observed.find(item => item.type === "assignment").summary, "Conflicting deadline");
+    assert.equal(observed.find(item => item.type === "exam").dates.starts_at, "2026-12-01");
+    assert.match(observed.find(item => item.id === "evaluation-fixture").summary, /Report 40%; attendance required; lesson 7/);
     const attendance={expectedRevision:1,courseId:"c1",confirmed:true,day:"2026-10-09",status:"present",expectedStatus:null};
     assert.equal((await call("record_attendance",attendance,readToken.body.access_token)).body.result.isError,true);
     const writer=await exchange(seed("manabi.read manabi.write"));

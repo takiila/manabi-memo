@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { EmptyICalendarError, parseICalendar } from './ical-import-model';
-import { applyManabiImport, FIELD_LABELS, informationWarnings, ITEM_LABELS, MAX_IMPORT_BYTES, parseManabiImport, planManabiImport, recordCalendarFileAttempt } from './manabi-import-model';
+import { applyManabiImport, FIELD_LABELS, informationWarnings, ITEM_LABELS, MAX_IMPORT_BYTES, missingCourseReviewItems, parseManabiImport, planManabiImport, recordCalendarFileAttempt } from './manabi-import-model';
 import { MANABI_AI_PROMPT } from './manabi-import-prompt';
 import sample from '../examples/manabi-import-seminar.json';
 import courseSample from '../examples/manabi-import-courses.json';
@@ -45,6 +45,7 @@ export function UniversityInbox({ inbox, courses, disabled, onChange, onImport }
   const fileReceipt = inbox.calendarFileReceipt;
   const fileResultLabels = { file_read: '予定あり', file_empty: 'ファイル内の予定0件', file_failed: '読取失敗' };
   const rows = bundle ? planManabiImport(inbox, bundle) : [];
+  const missing = bundle ? missingCourseReviewItems(inbox, bundle) : [];
   const stale = Boolean((bundle || recovery) && (baseline !== JSON.stringify(inbox) || courseBaseline !== JSON.stringify(courses)));
   const invalidChoice = rows.some(row => selected.includes(row.item.id) && (row.kind === 'blocked' || (row.warnings.length > 0 && !reviewed.includes(row.item.id))));
   const chosen = rows.filter(row => selected.includes(row.item.id) && (row.kind === 'add' || row.kind === 'update'));
@@ -129,6 +130,8 @@ export function UniversityInbox({ inbox, courses, disabled, onChange, onImport }
       {stale && <p role="alert">確認後に大学情報が変わりました。ファイルを選び直すか、貼り付けたJSONを再解析してください。</p>}
       {bundle && <section aria-label="取り込みプレビュー">
         <h3>取り込みプレビュー</h3><p>情報集合: {bundle.collection}</p>
+        {bundle.generated_at && <p>資料の作成日時 <time dateTime={bundle.generated_at}>{bundle.generated_at}</time></p>}
+        {missing.length > 0 && <details className="inbox-warning"><summary>今回の巡回データに未掲載の保存済み情報 {missing.length}件</summary><p>未取得や部分取得の可能性があります。保存済み情報は保持します。</p><ul>{missing.map(record => <li key={record.id}>{record.item.title}</li>)}</ul></details>}
         <button type="button" disabled={disabled || stale} onClick={() => setSelected(rows.filter(row => row.kind === 'add' || row.kind === 'update').map(row => row.item.id))}>新規・更新候補をすべて選択</button>
         <p>新規 {rows.filter(row => row.kind === 'add').length}件 / 更新 {rows.filter(row => row.kind === 'update').length}件 / 重複 {rows.filter(row => row.kind === 'same').length}件 / 要確認 {rows.filter(row => row.warnings.length).length}件 / 適用不可 {rows.filter(row => row.kind === 'blocked').length}件</p>
         {rows.some(row => row.kind === 'same' && row.item.type === 'course') && <p>「重複」は同じ情報がInboxに保存済みという意味です。時間割・ノートへの登録済みとは限りません。再保存は不要で、講義登録だけ確認できます。<button type="button" disabled={disabled || stale} onClick={() => { setImportMode('register'); setCourseReviewed(false); }}>保存済み情報の講義登録を確認</button></p>}

@@ -29,6 +29,10 @@ function validateManabiImport(value: unknown): ManabiImport {
   }
   const ids = new Set<string>();
   for (const item of value.items) {
+    if (isCourseReview(value.collection) && (!validateTimestamp(item.extensions?.['x-observed-at'])
+      || typeof item.extensions?.['x-review-scope'] !== 'string' || !String(item.extensions['x-review-scope']).trim())) {
+      throw new Error('科目巡回の確認日時・範囲を確認してください。');
+    }
     if (ids.has(item.id)) throw new Error(`idが重複しています: ${item.id}`);
     ids.add(item.id);
     const data = item.data as Record<string, unknown>;
@@ -83,6 +87,27 @@ export function informationWarnings(item: ImportItem): string[] {
   return warnings;
 }
 
+function isCourseReview(collection: string) {
+  return /^gunma-course-review-\d{4}$/.test(collection);
+}
+
+function comparableItem(collection: string, item: ImportItem) {
+  if (!isCourseReview(collection) || !item.extensions) return item;
+  const extensions = { ...item.extensions };
+  delete extensions['x-observed-at'];
+  return { ...item, extensions };
+}
+
+export function missingCourseReviewItems(inbox: InformationInbox, bundle: ManabiImport) {
+  if (!isCourseReview(bundle.collection)) return [];
+  const scopes = new Set(bundle.items.map(item => item.extensions?.['x-review-scope'])
+    .filter(scope => typeof scope === 'string' && scope.length > 0));
+  const ids = new Set(bundle.items.map(item => identity(bundle.collection, item)));
+  return inbox.records.filter(record => record.collection === bundle.collection
+    && scopes.has(record.item.extensions?.['x-review-scope'])
+    && !ids.has(identity(record.collection, record.item)));
+}
+
 export function planManabiImport(inbox: InformationInbox, bundle: ManabiImport): ImportPlanRow[] {
   return bundle.items.map(item => {
     const matches = inbox.records.filter(record => identity(record.collection, record.item) === identity(bundle.collection, item));
@@ -96,8 +121,11 @@ export function planManabiImport(inbox: InformationInbox, bundle: ManabiImport):
       else if (item.type === 'laboratory' && item.data.teacher_ids?.includes(relatedId) && related.some(other => other.type !== 'teacher')) warnings.push(`担当教員 ${relatedId} の種別が教員ではありません。`);
     }
     if (matches.length > 1) warnings.push('同じ識別子の情報が複数あります。バックアップ復元で追加された内容を確認してください。');
+    const olderObservation = isCourseReview(bundle.collection) && existing
+      && Date.parse(String(item.extensions?.['x-observed-at'])) < Date.parse(String(existing.item.extensions?.['x-observed-at']));
+    if (olderObservation) warnings.push('保存済み情報より古い巡回結果です。更新を停止しました。');
     if (changedIcalType) warnings.push('同じLMS予定の分類が変わりました。二重登録を避けるため自動更新を停止しました。保存済みの内容と原資料を確認してください。');
-    return { item, existing, kind: matches.length > 1 || changedIcalType ? 'blocked' : !existing ? 'add' : canonical(existing.item) === canonical(item) ? 'same' : 'update', warnings: Array.from(new Set(warnings)) };
+    return { item, existing, kind: matches.length > 1 || changedIcalType || olderObservation ? 'blocked' : !existing ? 'add' : canonical(comparableItem(bundle.collection, existing.item)) === canonical(comparableItem(bundle.collection, item)) ? 'same' : 'update', warnings: Array.from(new Set(warnings)) };
   });
 }
 
@@ -109,7 +137,7 @@ export function applyManabiImport(inbox: InformationInbox, bundle: ManabiImport,
   const result = structuredClone(inbox);
   const now = new Date().toISOString();
   for (const row of rows.filter(entry => selected.includes(entry.item.id))) {
-    if (row.kind === 'blocked') throw new Error('重複した識別子があるため取り込めません。');
+    if (row.kind === 'blocked') throw new Error(row.warnings.join(' ') || '選択した情報を取り込めません。');
     if (row.kind === 'same') continue;
     if (row.warnings.length && !reviewed.includes(row.item.id)) throw new Error(`${row.item.title}: 要確認の内容を承認してください。`);
     if (row.kind === 'add') {

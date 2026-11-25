@@ -4,7 +4,7 @@ import { TagInput } from './planner-tag-input';
 import { PlannerCalendar } from './planner-calendar';
 import { TaskDates } from './memo-checklist';
 import { isTrashExpired } from './data-safety-model';
-import { serializeEventDates, localPlannerDateTime, projectTodos, type ChecklistItem, type PlannerInput, type PlannerState, type TodoRow, type PersonalEvent } from './planner-model';
+import { courseReviewWork, serializeEventDates, localPlannerDateTime, projectTodos, type ChecklistItem, type PlannerInput, type PlannerState, type TodoRow, type PersonalEvent } from './planner-model';
 const SOURCE = { memo: '付箋由来', personal: '個人ToDo', assignment: '提出課題', study: '学習タスク' };
 export function PlannerPanel({ state, disabled, onPatch, onPlanner, onMemo, onCourse, onSession, initialTab = 'todo' }: { state: PlannerInput; disabled: boolean; initialTab?: 'todo' | 'events'; onPatch: (row: TodoRow, patch: Partial<ChecklistItem>) => void; onPlanner: (state: PlannerState) => void; onMemo: (id: string) => void; onCourse: (id: string) => void; onSession: (id: string) => void }) {
   const [tab, setTab] = useState<'todo' | 'calendar' | 'events'>(initialTab); const [query, setQuery] = useState(''); const [courseId, setCourseId] = useState(''); const [kind, setKind] = useState(''); const [tags, setTags] = useState<string[]>([]); const [status, setStatus] = useState('todo'); const [sort, setSort] = useState('due'); const [open, setOpen] = useState(''); const [newText, setNewText] = useState('');
@@ -17,7 +17,7 @@ export function PlannerPanel({ state, disabled, onPatch, onPlanner, onMemo, onCo
   return <section className="planner-panel"><header className="planner-heading"><div><small>付箋から、毎日の予定へ</small><h1>やること・カレンダー</h1><p>未完了 {rows.filter(row => !row.done).length}件 · 登録したチェック項目と課題をまとめて確認できます。</p></div></header>
     <nav className="planner-tabs" aria-label="やることの表示"><button type="button" aria-pressed={tab === 'todo'} onClick={() => setTab('todo')}>全体ToDo</button><button type="button" aria-pressed={tab === 'calendar'} onClick={() => setTab('calendar')}>統合カレンダー</button><button type="button" aria-pressed={tab === 'events'} onClick={() => setTab('events')}>個人予定・ごみ箱</button></nav>
     {tab === 'calendar' && <PlannerCalendar onSession={onSession} state={state} onTodo={selectTodo} onCourse={onCourse} onEvent={id => { setTab('events'); setEventId(id); }} />}
-    {tab === 'todo' && <><form className="planner-add" onSubmit={e => { e.preventDefault(); if (!newText.trim() || disabled) return; onPlanner({ ...state.planner, todos: [...state.planner.todos, { id: `todo-${crypto.randomUUID()}`, text: newText.trim(), courseId, tags: [], done: false, registered: true, priority: false, due: '', workAt: '', deletedAt: null }] }); setNewText(''); }}><input aria-label="個人ToDoを追加" placeholder="やることを直接追加する" value={newText} disabled={disabled} onChange={e => setNewText(e.target.value)} /><button type="submit" disabled={disabled || !newText.trim()}>追加</button></form>
+    {tab === 'todo' && <><CourseReviewTasks state={state} /><form className="planner-add" onSubmit={e => { e.preventDefault(); if (!newText.trim() || disabled) return; onPlanner({ ...state.planner, todos: [...state.planner.todos, { id: `todo-${crypto.randomUUID()}`, text: newText.trim(), courseId, tags: [], done: false, registered: true, priority: false, due: '', workAt: '', deletedAt: null }] }); setNewText(''); }}><input aria-label="個人ToDoを追加" placeholder="やることを直接追加する" value={newText} disabled={disabled} onChange={e => setNewText(e.target.value)} /><button type="submit" disabled={disabled || !newText.trim()}>追加</button></form>
       <div className="planner-toolbar"><label>検索<input value={query} placeholder="本文・講義・タグ" onChange={e => setQuery(e.target.value)} /></label><label>科目<select aria-label="科目" value={courseId} onChange={e => setCourseId(e.target.value)}><option value="">すべて</option>{state.courses.filter(c => !c.deletedAt).map(c => <option key={c.id} value={c.id}>{c.title} · {c.term}</option>)}</select></label>
       <label>種類<select aria-label="種類" value={kind} onChange={e => setKind(e.target.value)}><option value="">すべて</option>{Object.entries(SOURCE).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><label>状態<select aria-label="状態" value={status} onChange={e => setStatus(e.target.value)}><option value="todo">未完了</option><option value="done">完了済み</option><option value="all">すべて</option></select></label><label>並び順<select aria-label="並び順" value={sort} onChange={e => setSort(e.target.value)}><option value="due">期限が近い順</option><option value="priority">優先表示順</option><option value="course">科目順</option></select></label></div>
       {allTags.length > 0 && <div className="planner-tags" aria-label="タグの絞り込み（すべて一致）">{allTags.map(tag => <button type="button" key={tag} aria-pressed={tags.includes(tag)} onClick={() => setTags(tags.includes(tag) ? tags.filter(t => t !== tag) : [...tags, tag])}>#{tag}</button>)}</div>}
@@ -36,6 +36,19 @@ export function PlannerPanel({ state, disabled, onPatch, onPlanner, onMemo, onCo
       <details><summary>個人ToDo・予定のごみ箱（30日間）</summary>{state.planner.todos.filter(t => t.deletedAt && !isTrashExpired(t)).map(todo => <p key={todo.id}>{todo.text}<button type="button" disabled={disabled} onClick={() => onPlanner({ ...state.planner, todos: state.planner.todos.map(t => t.id === todo.id ? { ...t, deletedAt: null } : t) })}>復元</button></p>)}{state.planner.events.filter(t => t.deletedAt && !isTrashExpired(t)).map(event => <p key={event.id}>{event.title}<button type="button" disabled={disabled} onClick={() => onPlanner({ ...state.planner, events: state.planner.events.map(t => t.id === event.id ? { ...t, deletedAt: null } : t) })}>復元</button></p>)}</details>
     </>}
   </section>;
+}
+function CourseReviewTasks({ state }: { state: PlannerInput }) {
+  const work = courseReviewWork(state.inbox);
+  if (!work.length) return null;
+  return <details className="todo-card" open><summary>大学から取り込んだ課題・試験（{work.length}件）</summary>
+    {work.map(item => <article key={item.id}>
+      <strong>{item.title}</strong>
+      <p>{item.at ? localPlannerDateTime(item.at).replace('T', ' ') : '日時未確認'}{item.type === 'assignment' && ' · ' + item.status}</p>
+      {item.summary && <p>{item.summary}</p>}
+      {item.uncertainties?.map(value => <p key={value}>{value}</p>)}
+      {item.source.url && <a href={item.source.url} target="_blank" rel="noreferrer">出典を確認</a>}
+    </article>)}
+  </details>;
 }
 function EventEditor({ event, disabled, onAdd }: { event?: PersonalEvent; disabled: boolean; onAdd: (event: PersonalEvent) => void }) {
   const source = JSON.stringify(event ?? null);

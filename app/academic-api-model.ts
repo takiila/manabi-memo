@@ -24,7 +24,10 @@ export function academicSnapshot(state:unknown) {
     if(!item||!['event','assignment','deadline','exam','registration','announcement'].includes(String(item.type)))return [];
     const data=record(item.data)?item.data:{};
     const extensions=record(item.extensions)?item.extensions:{};
-    return [{...fields(item,['id','title','type','term']),source:record(item.source)?fields(item.source,['title','kind']):{},dates:fields(data,['starts_at','ends_at','due_at','opens_at','closes_at','published_at','course_code']),calendarRule:fields(extensions,['x-class-calendar','x-class-weekday']),needsReview:item.needs_review===true,updatedAt:typeof row.updatedAt==='string'?row.updatedAt:null}];
+    const review = typeof row.collection === 'string' && /^gunma-course-review-\d{4}$/.test(row.collection)
+      ? { ...fields(item, ['summary']), uncertainties: Array.isArray(item.uncertainties) ? item.uncertainties.filter(value => typeof value === 'string').slice(0, 15) : [],
+          observations: fields(extensions, ['x-course-code', 'x-observed-at', 'x-lms-submission-status']) } : {};
+    return [{...fields(item,['id','title','type','term']),...review,source:record(item.source)?fields(item.source,['title','kind']):{},dates:fields(data,['starts_at','ends_at','due_at','opens_at','closes_at','published_at','course_code']),calendarRule:fields(extensions,['x-class-calendar','x-class-weekday']),needsReview:item.needs_review===true,updatedAt:typeof row.updatedAt==='string'?row.updatedAt:null}];
   });
   return {
     universityCoverage:'unverified',
