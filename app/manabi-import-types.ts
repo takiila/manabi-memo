@@ -46,5 +46,9 @@ export type InformationRecord = {
   history: { item: ImportItem; replacedAt: string }[];
 };
 export type CatalogProfile = { university: string; faculty: string; academicYear: number; semester: string; syllabusUrl: string };
-export type InformationInbox = { version: 1; records: InformationRecord[]; catalogProfile?: CatalogProfile };
+export type CalendarFileSuccess = { outcome: 'file_read' | 'file_empty'; at: string; count: number };
+export type CalendarFileAttempt = CalendarFileSuccess | { outcome: 'file_failed'; at: string; reason: 'unreadable' };
+export type CalendarFileReceipt = { latest: CalendarFileAttempt; lastSuccess?: CalendarFileSuccess };
+
+export type InformationInbox = { version: 1; records: InformationRecord[]; catalogProfile?: CatalogProfile; calendarFileReceipt?: CalendarFileReceipt };
 export type ImportPlanRow = { item: ImportItem; kind: 'add' | 'update' | 'same' | 'blocked'; existing?: InformationRecord; warnings: string[] };

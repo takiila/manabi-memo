@@ -78,6 +78,41 @@ export const sqliteSchema = [
     PRIMARY KEY (transaction_id, session_id)
   )`,
   "CREATE INDEX IF NOT EXISTS sync_transaction_pdfs_user_idx ON sync_transaction_pdfs (user_id, transaction_id)",
+  `CREATE TABLE IF NOT EXISTS academic_oauth_codes (
+    code_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    identity_issuer TEXT NOT NULL,
+    identity_subject TEXT NOT NULL,
+    email TEXT NOT NULL,
+    client_id TEXT NOT NULL,
+    redirect_uri TEXT NOT NULL,
+    resource TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    challenge TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    used_at INTEGER
+  )`,
+  `CREATE TABLE IF NOT EXISTS academic_oauth_links (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    identity_issuer TEXT NOT NULL,
+    identity_subject TEXT NOT NULL,
+    email TEXT NOT NULL,
+    client_id TEXT NOT NULL,
+    resource TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    revoked_at INTEGER
+  )`,
+  "CREATE INDEX IF NOT EXISTS academic_oauth_links_user_idx ON academic_oauth_links (user_id)",
+  `CREATE TABLE IF NOT EXISTS academic_oauth_tokens (
+    token_hash TEXT PRIMARY KEY,
+    link_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    used_at INTEGER
+  )`,
+  "CREATE INDEX IF NOT EXISTS academic_oauth_tokens_link_idx ON academic_oauth_tokens (link_id)",
   `CREATE TABLE IF NOT EXISTS campus_memberships (
     user_id TEXT PRIMARY KEY,
     activated_at INTEGER NOT NULL,

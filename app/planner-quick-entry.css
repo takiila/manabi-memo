@@ -1,0 +1,13 @@
+.planner-quick-entry summary { cursor:pointer; font-weight:700; list-style:revert; padding:3px 0; }
+.planner-quick-entry[open] summary { margin-bottom:12px; }
+.planner-quick-shortcuts { display:flex; flex-wrap:wrap; gap:8px; }
+.planner-quick-shortcuts button { flex:0 1 auto; min-height:38px; border-radius:9px; }
+.planner-quick-form { display:grid; gap:12px; margin-top:12px; padding:13px; border:1px solid #dce3dc; border-radius:12px; background:#fafbf8; }
+.planner-quick-form label { display:flex; flex-direction:column; gap:5px; min-width:0; }
+.planner-quick-form input:not([type=checkbox]) { width:100%; min-width:0; box-sizing:border-box; }
+.planner-quick-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; }
+.planner-quick-form-head { display:flex; justify-content:space-between; gap:8px; align-items:center; }
+.planner-quick-priority { flex-direction:row !important; align-items:center; }
+.planner-quick-form button[type=submit] { justify-self:start; }
+.planner-quick-status { margin:8px 0 0; font-size:0.85rem; }
+@media (max-width:600px) { .planner-quick-shortcuts button { flex:1 1 145px; } .planner-quick-form { padding:9px; } }

@@ -7989,3 +7989,120 @@ textarea:focus-visible,
 .timetable-catalog-dialog input[type="search"] { width: 100%; max-width: 100%; }
 .timetable-catalog-dialog .catalog-options { max-height: 30dvh; }
 .timetable-catalog-dialog dd { margin: 0; }
+
+/* Personal planner: shares notebook data, independent of Campus beta UI. */
+.planner-panel,.planner-home,.course-memo-panel { max-width:1200px; margin:0 auto; padding:24px; }
+.planner-heading,.planner-toolbar,.planner-actions,.planner-add,.checklist-main,.todo-summary { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+.planner-heading { justify-content:space-between; margin-bottom:16px; }
+.planner-heading h1 { margin:4px 0 8px; font-size:30px; }
+.planner-heading h2,.planner-heading h4 { margin:4px 0; }
+.planner-panel p,.course-memo-panel p,.planner-home p { color:#616d65; line-height:1.6; }
+.planner-panel button,.planner-home button,.memo-checklist button,.course-memo-panel button,.planner-dialog button { border:1px solid #d5ddd5; border-radius:10px; padding:9px 13px; background:#fffdf7; color:#2f5243; cursor:pointer; }
+.planner-panel button:disabled,.memo-checklist button:disabled { opacity:.5; cursor:not-allowed; }
+.planner-panel label,.planner-dialog label,.home-customize label,.course-memo-panel label { display:flex; flex-direction:column; gap:6px; color:#526258; font-size:13px; }
+.planner-panel input:not([type=checkbox]),.planner-panel select,.planner-dialog input:not([type=checkbox]),.planner-dialog textarea,.course-memo-panel input,.course-memo-panel select,.home-customize select { border:1px solid #d8dfd5; border-radius:9px; padding:9px 10px; background:#fffefa; min-width:0; max-width:100%; color:#253b31; }
+.planner-panel input[type=checkbox],.planner-dialog input[type=checkbox],.home-customize input[type=checkbox] { width:18px; height:18px; accent-color:#3b7056; flex-shrink:0; }
+.planner-panel fieldset,.planner-dialog fieldset { border:0; padding:0; margin:12px 0; }
+.planner-tabs { display:flex; gap:8px; margin:20px 0; flex-wrap:wrap; }
+.planner-tabs button[aria-pressed=true],.planner-tags button[aria-pressed=true] { color:white; background:#426c55; border-color:#426c55; }
+.planner-toolbar { padding:16px; margin:14px 0; border:1px solid #dde2d9; background:#f8f8f0; border-radius:14px; }
+.planner-toolbar label { flex:1 1 140px; }
+.planner-toolbar label:has(input[type=checkbox]) { flex-direction:row; align-items:center; }
+.planner-tags { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0; }
+.planner-tags button { font-size:12px; padding:6px 10px; }
+.planner-add { margin:14px 0; }
+.planner-add input { flex:1; min-width:100px; }
+.todo-list { display:grid; gap:12px; }
+.todo-card,.course-memo-card,.calendar-entry,.planner-home-card { background:#fffefa; border:1px solid #dce2d7; border-radius:16px; padding:18px; box-shadow:0 3px 14px #30463406; }
+.todo-summary { justify-content:space-between; }
+.todo-summary > label { display:flex; flex-direction:row; align-items:center; flex:1 1 250px; min-width:0; }
+.todo-summary strong,.todo-summary small,.home-todo-row strong,.home-todo-row small { display:block; }
+.todo-summary strong { color:#294236; font-size:16px; overflow-wrap:anywhere; }
+.todo-summary small { margin-top:6px; font-size:12px; }
+.todo-summary > span { font-size:12px; color:#7d6444; }
+.todo-card.is-done .todo-summary strong { text-decoration:line-through; opacity:.55; }
+.todo-detail { border-top:1px solid #e4e7df; padding-top:16px; margin-top:14px; }
+.planner-actions { margin-top:12px; font-size:12px; }
+.planner-actions label { display:flex; flex-direction:row; align-items:center; }
+.planner-dates { display:flex; gap:10px; flex-wrap:wrap; }
+.planner-dates legend { font-weight:600; margin-bottom:12px; }
+.planner-dates label { flex:1 1 140px; }
+.planner-dates .planner-checkbox { flex-direction:row; align-items:center; }
+.planner-dates > small { flex-basis:100%; color:#68766b; }
+.memo-checklist h4 { margin:14px 0 4px; }
+.memo-checklist h4 small { font-weight:400; color:#67786a; }
+.checklist-row { border:1px solid #e1e5dc; background:#fafaf4; border-radius:12px; padding:12px; margin-top:10px; }
+.checklist-main { flex-wrap:nowrap; }
+.checklist-main input:not([type=checkbox]) { flex:1; }
+.checklist-row.is-done .checklist-main input:not([type=checkbox]) { text-decoration:line-through; color:#7c897d; }
+.course-memo-panel { padding-top:0; }
+.course-memo-card { margin:12px 0; }
+.course-memo-card > p { white-space:pre-wrap; }
+.planner-dialog-backdrop { position:fixed; inset:0; background:#213b3266; z-index:150; display:flex; align-items:center; justify-content:center; padding:20px; }
+.planner-dialog { width:min(680px,100%); max-height:90dvh; overflow:auto; border-radius:22px; padding:24px; background:#fffefa; box-shadow:0 24px 80px #243d3233; }
+.planner-dialog > label { margin-bottom:14px; }
+.planner-dialog textarea { min-height:70px; resize:vertical; }
+.calendar-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:5px; }
+.calendar-grid > strong { text-align:center; font-size:12px; color:#687568; padding:8px; }
+.calendar-grid .calendar-day { display:flex; flex-direction:column; align-items:stretch; gap:5px; min-height:108px; border:1px solid #e0e4da; border-radius:12px; padding:8px; text-align:left; min-width:0; }
+.calendar-day b { color:#687365; font-size:13px; }
+.calendar-grid .calendar-day.selected { border:2px solid #53775b; background:#f1f5e9; padding:7px; }
+.calendar-day.today b { color:#39784f; text-decoration:underline; }
+.calendar-chip { font-size:10px; display:block; background:#f5efdb; border-radius:5px; padding:3px 5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.calendar-chip.kind-class { background:#eef1e9; color:#718066; }
+.calendar-chip.kind-todo,.calendar-chip.kind-assignment { background:#f8e8d9; }
+.calendar-chip.kind-university { background:#e7edfa; }
+.calendar-chip.kind-event { background:#e4f1e6; }
+.calendar-chip.done,.calendar-entry.done { opacity:.5; }
+.calendar-agenda { display:grid; gap:12px; }
+.calendar-entry { display:flex; gap:12px; align-items:center; justify-content:space-between; }
+.calendar-entry h4 { margin:6px 0; }
+.calendar-entry p { margin:0; font-size:12px; }
+.calendar-entry small { color:#77836f; }
+.planner-hint { font-size:12px; }
+.event-editor { border:1px solid #dce3d6; padding:18px; border-radius:14px; margin:12px 0; }
+.event-editor fieldset { display:flex; flex-wrap:wrap; align-items:end; gap:12px; }
+.event-editor label { flex:1 1 150px; }
+.planner-home { padding:12px 0 0; }
+.home-customize { margin:0 24px 18px; padding:12px 16px; background:#f4f5ed; border-radius:12px; font-size:12px; }
+.home-customize summary { cursor:pointer; color:#506a55; }
+.home-customize label { display:inline-flex; flex-direction:row; align-items:center; margin:8px 16px 8px 0; }
+.planner-home-card { margin:0 24px 24px; }
+.planner-home-card .home-todo-row { width:100%; display:flex; justify-content:space-between; align-items:center; gap:12px; text-align:left; border:0; border-top:1px solid #e3e7de; border-radius:0; padding:14px 0; }
+.home-todo-row > small { flex-shrink:0; color:#90734b; font-size:12px; }
+.home-todo-row strong { font-size:14px; }
+.home-todo-row span small { margin-top:4px; color:#778373; }
+@media(max-width:700px) {
+  .planner-panel,.course-memo-panel { padding:16px 12px; }
+  .planner-heading h1 { font-size:24px; }
+  .planner-toolbar { padding:12px; gap:8px; }
+  .planner-toolbar label { flex-basis:130px; }
+  .todo-card { padding:14px; }
+  .calendar-grid { gap:3px; }
+  .calendar-grid .calendar-day { min-height:75px; padding:5px; border-radius:7px; gap:3px; }
+  .calendar-grid .calendar-day.selected { padding:4px; }
+  .calendar-chip { font-size:9px; padding:2px; }
+  .calendar-day small { font-size:8px; }
+  .planner-dialog-backdrop { padding:10px; }
+  .planner-dialog { padding:18px 14px; }
+  .home-customize,.planner-home-card { margin-left:12px; margin-right:12px; }
+  .home-todo-row { flex-wrap:wrap; }
+  .mobile-nav.has-planner.has-inbox { grid-template-columns:repeat(5,minmax(0,1fr)); }
+  .mobile-nav.has-planner.has-inbox.has-campus { grid-template-columns:repeat(6,minmax(0,1fr)); }
+  .mobile-nav.has-planner button { padding-left:2px; padding-right:2px; }
+  .mobile-nav.has-planner span { font-size:9px; }
+}
+dialog.planner-dialog { border: 0; margin: auto; max-height: calc(100dvh - 40px); }
+dialog.planner-dialog::backdrop { background: rgba(15, 23, 42, .5); }
+@media (max-width: 900px) {
+  .planner-panel,.course-memo-panel,.planner-home { padding-bottom: calc(100px + env(safe-area-inset-bottom)); }
+  .mobile-nav.has-planner.has-inbox { grid-template-columns: repeat(5,minmax(0,1fr)); }
+  .mobile-nav.has-planner.has-inbox.has-campus { grid-template-columns: repeat(6,minmax(0,1fr)); }
+}
+
+.session-date-field { display:flex; flex-direction:column; gap:8px; margin:18px 0; color:#526258; font-size:14px; }
+.session-date-field input { width:100%; min-height:44px; padding:10px; border:1px solid #d8dfd5; border-radius:9px; color:#253b31; background:#fffefa; }
+.session-date-field small,.session-date-empty p { color:#68766b; line-height:1.6; }
+.course-memo-panel > details > label { margin:12px 0; }
+.course-memo-panel button:disabled { opacity:.5; cursor:not-allowed; }
+.calendar-agenda .selected-event { border:2px solid #426c55; }

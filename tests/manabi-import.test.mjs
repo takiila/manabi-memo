@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { parseManabiImport, planManabiImport, applyManabiImport, normalizeInformationInbox, mergeInformationInboxes } from '../app/manabi-import-model.ts';
+import { parseManabiImport, planManabiImport, applyManabiImport, normalizeInformationInbox, mergeInformationInboxes, recordCalendarFileAttempt } from '../app/manabi-import-model.ts';
 import { createBackupFile, inspectBackupFile } from '../app/backup.ts';
 import { mergeImportedState } from '../app/data-migration-model.ts';
 import { normalizeCampusState } from '../app/campus-model.ts';
@@ -127,4 +127,16 @@ test('stable comparison ignores object property order and separates information 
   const otherCollection = parse({ ...bundle(), collection: 'other-university-2026' });
   assert.equal(planManabiImport(saved, otherCollection)[0].kind, 'add');
   assert.equal(commit(saved, otherCollection).records.length, 2);
+});
+test('ICS確認記録は最終成功と直近の失敗を独立に保持し、旧Inboxと結合できる', () => {
+  const success = { outcome: 'file_empty', at: '2026-11-26T00:00:00.000Z', count: 0 };
+  const failure = { outcome: 'file_failed', at: '2026-11-27T00:00:00.000Z', reason: 'unreadable' };
+  const first = recordCalendarFileAttempt(empty(), success);
+  const failed = recordCalendarFileAttempt(empty(), failure);
+  const merged = mergeInformationInboxes(failed, first);
+  assert.deepEqual(merged.calendarFileReceipt, { latest: failure, lastSuccess: success });
+  assert.deepEqual(merged.records, []);
+  assert.deepEqual(normalizeInformationInbox(merged), merged);
+  assert.deepEqual(mergeInformationInboxes(merged, first), merged);
+  assert.throws(() => recordCalendarFileAttempt(first, { ...failure, reason: 'arbitrary raw error' }));
 });

@@ -1,7 +1,7 @@
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import schema from '../schema/manabi-memo.schema.json' with { type: 'json' };
-import type { ImportItem, ImportItemType, ImportPlanRow, InformationInbox, ManabiImport } from './manabi-import-types';
+import type { CalendarFileAttempt, CalendarFileReceipt, ImportItem, ImportItemType, ImportPlanRow, InformationInbox, ManabiImport } from './manabi-import-types';
 import { normalizeCatalogProfile } from './course-catalog-model.ts';
 
 export const MAX_IMPORT_BYTES = 1024 * 1024;
@@ -74,7 +74,7 @@ export function informationWarnings(item: ImportItem): string[] {
   const data = { ...(item.type === 'course' ? { term: item.term } : {}), ...item.data } as Record<string, unknown>;
   if (item.type === 'course' && data.term == null) data.term = item.term;
   const warnings = (REQUIRED_FACTS[item.type] ?? []).filter(key => data[key] == null || (Array.isArray(data[key]) && data[key].length === 0)).map(key => `${FIELD_LABELS[key] ?? key}が未確認です。`);
-  if (item.needs_review) warnings.push('AIが確認を必要としています。');
+  if (item.needs_review) warnings.push('この情報には確認が必要です。');
   warnings.push(...(item.uncertainties ?? []));
   for (const [startKey, endKey] of [['starts_at', 'ends_at'], ['application_start', 'application_end'], ['opens_at', 'closes_at']]) {
     const start = data[startKey], end = data[endKey];
@@ -87,6 +87,7 @@ export function planManabiImport(inbox: InformationInbox, bundle: ManabiImport):
   return bundle.items.map(item => {
     const matches = inbox.records.filter(record => identity(record.collection, record.item) === identity(bundle.collection, item));
     const existing = matches[0];
+    const changedIcalType = bundle.collection === 'ical-calendar' && inbox.records.some(record => record.collection === bundle.collection && record.item.id === item.id && record.item.type !== item.type);
     const warnings = informationWarnings(item);
     if ([...inbox.records.filter(record => record.collection === bundle.collection).map(record => record.item), ...bundle.items].some(other => other.id !== item.id && other.type === item.type && other.title.normalize('NFKC').trim() === item.title.normalize('NFKC').trim())) warnings.push('同じタイトルの別IDがあります。重複かどうか確認してください。');
     for (const relatedId of [...(item.related_ids ?? []), ...(item.type === 'laboratory' ? item.data.teacher_ids ?? [] : [])]) {
@@ -95,7 +96,8 @@ export function planManabiImport(inbox: InformationInbox, bundle: ManabiImport):
       else if (item.type === 'laboratory' && item.data.teacher_ids?.includes(relatedId) && related.some(other => other.type !== 'teacher')) warnings.push(`担当教員 ${relatedId} の種別が教員ではありません。`);
     }
     if (matches.length > 1) warnings.push('同じ識別子の情報が複数あります。バックアップ復元で追加された内容を確認してください。');
-    return { item, existing, kind: matches.length > 1 ? 'blocked' : !existing ? 'add' : canonical(existing.item) === canonical(item) ? 'same' : 'update', warnings: Array.from(new Set(warnings)) };
+    if (changedIcalType) warnings.push('同じLMS予定の分類が変わりました。二重登録を避けるため自動更新を停止しました。保存済みの内容と原資料を確認してください。');
+    return { item, existing, kind: matches.length > 1 || changedIcalType ? 'blocked' : !existing ? 'add' : canonical(existing.item) === canonical(item) ? 'same' : 'update', warnings: Array.from(new Set(warnings)) };
   });
 }
 
@@ -123,6 +125,31 @@ export function applyManabiImport(inbox: InformationInbox, bundle: ManabiImport,
   return result;
 }
 
+function normalizeCalendarFileAttempt(value: CalendarFileAttempt): CalendarFileAttempt {
+  if (!value || !validateTimestamp(value.at)) throw new Error('ICS確認日時の形式が不正です。');
+  const at = new Date(value.at).toISOString();
+  if (value.outcome === 'file_failed' && value.reason === 'unreadable') {
+    return { at, outcome: value.outcome, reason: value.reason };
+  }
+  if (value.outcome === 'file_empty' && value.count === 0) return { at, outcome: value.outcome, count: 0 };
+  if (value.outcome === 'file_read' && Number.isInteger(value.count) && value.count >= 1 && value.count <= 200) {
+    return { at, outcome: value.outcome, count: value.count };
+  }
+  throw new Error('ICS確認結果の形式が不正です。');
+}
+
+function mergeCalendarFileReceipts(left: CalendarFileReceipt | undefined, right: CalendarFileReceipt): CalendarFileReceipt {
+  const latest = !left || right.latest.at > left.latest.at ? right.latest : left.latest;
+  const lastSuccess = right.lastSuccess && (!left?.lastSuccess || right.lastSuccess.at > left.lastSuccess.at) ? right.lastSuccess : left?.lastSuccess;
+  return { latest, ...(lastSuccess ? { lastSuccess } : {}) };
+}
+
+export function recordCalendarFileAttempt(inbox: InformationInbox, attempt: CalendarFileAttempt): InformationInbox {
+  const latest = normalizeCalendarFileAttempt(attempt);
+  const receipt = latest.outcome === 'file_failed' ? { latest } : { latest, lastSuccess: latest };
+  return { ...inbox, calendarFileReceipt: mergeCalendarFileReceipts(inbox.calendarFileReceipt, receipt) };
+}
+
 export function normalizeInformationInbox(value: unknown): InformationInbox {
   if (value === undefined) return structuredClone(EMPTY_INFORMATION_INBOX);
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('大学情報Inboxの保存形式が不正です。');
@@ -141,12 +168,23 @@ export function normalizeInformationInbox(value: unknown): InformationInbox {
     });
     return { id: record.id, collection: record.collection, item, status: record.status, importedAt: record.importedAt, updatedAt: record.updatedAt, history };
   });
-  return { version: 1, records, ...(inbox.catalogProfile === undefined ? {} : { catalogProfile: normalizeCatalogProfile(inbox.catalogProfile) }) };
+  const calendarFileReceipt = inbox.calendarFileReceipt === undefined ? undefined : (() => {
+    const { latest, lastSuccess } = inbox.calendarFileReceipt;
+    const attempt = normalizeCalendarFileAttempt(latest);
+    const success = lastSuccess === undefined ? undefined : normalizeCalendarFileAttempt(lastSuccess);
+    if (success?.outcome === 'file_failed' || (success && success.at > attempt.at)) {
+      throw new Error('ICSの最終読取成功日時が不正です。');
+    }
+    return mergeCalendarFileReceipts(success ? { latest: success, lastSuccess: success } : undefined,
+      attempt.outcome === 'file_failed' ? { latest: attempt } : { latest: attempt, lastSuccess: attempt });
+  })();
+  return { version: 1, records, ...(calendarFileReceipt ? { calendarFileReceipt } : {}), ...(inbox.catalogProfile === undefined ? {} : { catalogProfile: normalizeCatalogProfile(inbox.catalogProfile) }) };
 }
 
 export function mergeInformationInboxes(existingValue: unknown, incomingValue: unknown): InformationInbox {
   const existing = normalizeInformationInbox(existingValue), incoming = normalizeInformationInbox(incomingValue);
   if (!existing.catalogProfile && incoming.catalogProfile) existing.catalogProfile = incoming.catalogProfile;
+  if (incoming.calendarFileReceipt) existing.calendarFileReceipt = mergeCalendarFileReceipts(existing.calendarFileReceipt, incoming.calendarFileReceipt);
   for (const record of incoming.records) {
     if (existing.records.some(entry => identity(entry.collection, entry.item) === identity(record.collection, record.item) && canonical(entry.item) === canonical(record.item) && canonical(entry.history) === canonical(record.history))) continue;
     const id = existing.records.some(entry => entry.id === record.id) ? crypto.randomUUID() : record.id;

@@ -149,3 +149,21 @@ test("科目別評価計画から累積GPAを算出する", () => {
   assert.equal(result.plannedGpa, 4.15);
   assert.ok(result.projectedCumulative > 3);
 });
+
+
+test("学習結果の記録・復習目安・時間配分は解説と自力解答を区別する", async () => {
+  const { addEvidence, reviewTopics, dailyStudyPlan } = await import("../app/learning-model.ts");
+  const first={id:"r1",courseId:"c1",topic:"証明",day:"2026-10-01",outcome:"explanation",minutes:10,createdAt:"2026-10-01T01:00:00Z"};
+  const second={...first,id:"r2",outcome:"independent",day:"2026-10-02",createdAt:"2026-10-02T01:00:00Z"};
+  const records=addEvidence(addEvidence([],first),second);
+  assert.equal(addEvidence(records,second),records);
+  assert.equal(normalizeCampusState({studyEvidence:records}).studyEvidence.length,2);
+  assert.throws(()=>normalizeCampusState({studyEvidence:[{...first,day:"2026-02-30"}]}));
+  const topics=reviewTopics(records,"2026-10-05");
+  assert.equal(topics[0].reviewOn,"2026-10-05");
+  assert.equal(topics[0].outcome,"independent");
+  const plan=dailyStudyPlan([{id:"assignment:a",title:"レポート",group:"urgent",source:"task"}],topics,"2026-10-05",45);
+  assert.equal(plan.blocks[0].title,"レポート");
+  assert.ok(plan.blocks.some(block=>block.title.includes("証明")));
+  assert.equal(plan.blocks.reduce((n,block)=>n+block.minutes,0)+plan.remaining,45);
+});

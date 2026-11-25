@@ -1,3 +1,4 @@
+import { EMPTY_PLANNER, mergePlanner, type PlannerState } from "./planner-model.ts";
 import type { CampusGpaProfile, CampusGradePlan, CampusState } from "./campus-model";
 import { mergeInformationInboxes } from "./manabi-import-model.ts";
 import type { InformationInbox } from "./manabi-import-types";
@@ -41,6 +42,7 @@ type MergeState<TCourse extends MergeCourse, TSession extends MergeSession, TMem
   tutorialSeen: boolean;
   campus: CampusState;
   inbox?: InformationInbox;
+  planner?: PlannerState;
   displayPreferences: unknown;
 };
 
@@ -140,6 +142,7 @@ export function mergeImportedState<
       tutorialSeen: existing.tutorialSeen,
       campus: mergeCampusImported(existing.campus, incoming.campus, courseIds.firstIds),
       inbox: mergeInformationInboxes(existing.inbox, incoming.inbox),
+      planner: mergePlanner(existing.planner ?? EMPTY_PLANNER, incoming.planner ?? EMPTY_PLANNER, courseIds.firstIds),
       displayPreferences: existing.displayPreferences,
     } as TState,
     pdfs: pdfs.map((entry) => ({ ...entry, id: sessionMap.get(entry.id) ?? entry.id })),
@@ -231,6 +234,7 @@ export function mergeCampusImported(
   const examIds = reidentifyIncoming(existing.exams, incoming.exams, "exam");
   const attendanceIds = reidentifyIncoming(existing.attendanceRecords, incoming.attendanceRecords, "attendance");
   const studyTaskIds = reidentifyIncoming(existing.studyTasks, incoming.studyTasks, "study-task");
+  const evidenceIds = reidentifyIncoming(existing.studyEvidence ?? [], incoming.studyEvidence ?? [], "study-evidence");
 
   const remapCourse = <T extends { courseId: string }>(items: T[]) => items.map((item) => ({
     ...item,
@@ -300,6 +304,7 @@ export function mergeCampusImported(
     exams: [...existing.exams, ...exams],
     attendanceRecords: [...existing.attendanceRecords, ...attendanceRecords],
     studyTasks: [...existing.studyTasks, ...studyTasks],
+    ...((existing.studyEvidence || incoming.studyEvidence) ? { studyEvidence: [...(existing.studyEvidence ?? []), ...remapCourse(incoming.studyEvidence ?? []).map((item,index) => ({ ...item, id: evidenceIds.itemIds[index] ?? item.id }))] } : {}),
     gpaProfile: mergedGpaProfile,
     degreePlan: mergedDegreePlan,
   } as CampusState;

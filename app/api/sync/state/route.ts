@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { normalizePlanner, normalizeChecklist, normalizeSessionDay } from "../../../planner-model";
+import { normalizeStudyEvidence } from "../../../learning-model";
 import { queryAll, queryOne, withTransaction } from "@/lib/server/database";
 import { inspectStoredObject, objectStore, storedObjectSize } from "@/lib/server/object-store";
 import { committedPdfObjectKey, stagingPdfPrefix } from "@/lib/server/pdf-transfer";
@@ -116,7 +118,7 @@ export async function PUT(request: Request) {
         [accountId],
       ));
       const currentRevision = current?.revision ?? 0;
-      if (currentRevision !== parsed.baseRevision) throw new SyncConflictError(currentRevision, current?.updated_at ?? null);
+      if (currentRevision !== parsed.baseRevision || (current && current.schema_version > parsed.schemaVersion)) throw new SyncConflictError(currentRevision, current?.updated_at ?? null);
       const nextRevision = currentRevision + 1;
       const complete = parsed.pdfIds.length === 0;
       const manifest = JSON.stringify(parsed.pdfIds.map((sessionId) => ({ sessionId, noteVersion: parsed.pdfVersions[sessionId] })));
@@ -173,6 +175,8 @@ export async function DELETE(request: Request) {
   const deleted = await withTransaction(async (transaction) => {
     const current = firstOrNull(await transaction.queryAll<{ revision: number; schema_version: number }>("SELECT revision, schema_version FROM synced_app_state WHERE user_id = ?", [accountId]));
     const nextRevision = (current?.revision ?? 0) + 1;
+    await transaction.execute("UPDATE academic_oauth_links SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL", [now,accountId]);
+    await transaction.execute("DELETE FROM academic_oauth_codes WHERE user_id = ?", [accountId]);
     await transaction.execute("DELETE FROM synced_pdf WHERE user_id = ?", [accountId]);
     await transaction.execute("DELETE FROM sync_transaction_pdfs WHERE user_id = ?", [accountId]);
     await transaction.execute("DELETE FROM sync_transactions WHERE user_id = ?", [accountId]);
@@ -202,9 +206,9 @@ async function prepareTransaction(accountId: string, body: TransactionBody) {
   }
   try {
     const targetRevision = await withTransaction(async (transaction) => {
-      const current = firstOrNull(await transaction.queryAll<{ revision: number; updated_at: number }>("SELECT revision, updated_at FROM synced_app_state WHERE user_id = ?", [accountId]));
+      const current = firstOrNull(await transaction.queryAll<{ revision: number; schema_version: number; updated_at: number }>("SELECT revision, schema_version, updated_at FROM synced_app_state WHERE user_id = ?", [accountId]));
       const currentRevision = current?.revision ?? 0;
-      if (currentRevision !== parsed.baseRevision) throw new SyncConflictError(currentRevision, current?.updated_at ?? null);
+      if (currentRevision !== parsed.baseRevision || (current && current.schema_version > parsed.schemaVersion)) throw new SyncConflictError(currentRevision, current?.updated_at ?? null);
       const target = currentRevision + 1;
       const payloadWithManifest = JSON.stringify({ ...(parsed.state as Record<string, unknown>), __syncPdfManifest: validation.manifest });
       await transaction.execute(
@@ -269,7 +273,7 @@ async function commitTransaction(accountId: string, transactionId: string) {
       if (latestTransaction.status !== "pending") throw new SyncConflictError(latestTransaction.target_revision, latestTransaction.updated_at);
       const current = firstOrNull(await transaction.queryAll<StateRow>("SELECT revision, schema_version, payload, updated_at, updated_by, deleted_at, pdf_manifest, sync_complete FROM synced_app_state WHERE user_id = ?", [accountId]));
       const currentRevision = current?.revision ?? 0;
-      if (currentRevision !== latestTransaction.base_revision) {
+      if (currentRevision !== latestTransaction.base_revision || (current && current.schema_version > latestTransaction.schema_version)) {
         await transaction.execute("UPDATE sync_transactions SET status = 'aborted', updated_at = ? WHERE id = ? AND status = 'pending'", [Date.now(), transactionId]);
         throw new SyncConflictError(currentRevision, current?.updated_at ?? null);
       }
@@ -450,6 +454,16 @@ function validStateShape(value: unknown): value is Record<string, unknown> {
   if (!Array.isArray(state.courses) || !Array.isArray(state.sessions) || !Array.isArray(state.memos)) return false;
   if (state.courses.length > 5000 || state.sessions.length > 20000 || state.memos.length > 100000) return false;
   if (state.campus !== undefined && (!state.campus || typeof state.campus !== "object" || Array.isArray(state.campus))) return false;
+  try {
+    normalizePlanner(state.planner);
+    if (state.campus && typeof state.campus === 'object' && 'studyEvidence' in state.campus) normalizeStudyEvidence(state.campus.studyEvidence);
+    for (const session of state.sessions) {
+      if (session && typeof session === "object") normalizeSessionDay((session as { scheduledOn?: unknown }).scheduledOn);
+    }
+    for (const memo of state.memos) {
+      if (memo && typeof memo === "object") normalizeChecklist((memo as { checklist?: unknown }).checklist);
+    }
+  } catch { return false; }
   return true;
 }
 

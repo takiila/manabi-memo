@@ -4,6 +4,10 @@
 
 講義、授業回、本文ノート、PDF、付箋、検索、復習と、任意のCampus Musterを扱うoffline-firstのNext.jsアプリです。端末内データを先に保存し、Firebaseログイン後も利用者が有効化するまでクラウドへ送信しません。
 
+## 合意済み仕様の参照
+
+新規開発・レビュー前に **[docs/development/product-decisions.md](docs/development/product-decisions.md)** を確認する。利用者との確定事項と未完成項目を整理している。新しい設計判断で既定の仕様を無断変更せず、GitHub Issues #9〜#13およびPR #8の現実と照合する。既存実装を作り直す形式的な開発手法は不要。
+
 ## 変更してはいけない仕様
 
 - 講義、授業回、ノート、PDF、付箋、検索、バックアップ、共通ごみ箱を削除・簡略化しない。

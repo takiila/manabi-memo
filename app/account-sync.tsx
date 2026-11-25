@@ -4,6 +4,7 @@ import { AlertTriangle, Check, Cloud, CloudOff, LoaderCircle, LogIn, RefreshCw, 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   authenticatedFetch,
+  firebaseIdToken,
   observeFirebaseUser,
   resetFirebasePassword,
   signInWithEmail,
@@ -12,6 +13,8 @@ import {
   signUpWithEmail,
 } from "./firebase-auth-client";
 import { loadAllPdfs } from "./local-files";
+import { AuthConfigError } from "./firebase-config-client";
+import { mayRefreshSync, sameSyncSnapshot, SyncOperationScope } from "./sync-refresh-model";
 import { decideSyncPlan, type LocalSyncMeta } from "./sync-model";
 import { referencesForSync, referenceSyncFingerprint } from "./reference-sync-model";
 import { pdfVersionsFromState } from "./pdf-sync-model";
@@ -38,8 +41,9 @@ type AccountSyncProps = {
   currentState: object;
   schemaVersion: number;
   hydrated: boolean;
+  localReady?: boolean;
   localHasData: boolean;
-  onApplyCloud: (state: unknown, pdfs: Array<{ id: string; blob: Blob }>) => Promise<void>;
+  onApplyCloud: (state: unknown, pdfs: Array<{ id: string; blob: Blob }>, signal?: AbortSignal) => Promise<void>;
   onCampusEntitlement: (enabled: boolean | null) => void;
   onFirebaseAvailability?: (enabled: boolean | null) => void;
 };
@@ -56,7 +60,7 @@ type PendingUpload = {
   manifests: Array<{ sessionId: string; size: number; sha256: string; noteVersion: string }>;
 };
 
-export default function AccountSync({ currentState, schemaVersion, hydrated, localHasData, onApplyCloud, onCampusEntitlement, onFirebaseAvailability }: AccountSyncProps) {
+export default function AccountSync({ currentState, schemaVersion, hydrated, localReady = true, localHasData, onApplyCloud, onCampusEntitlement, onFirebaseAvailability }: AccountSyncProps) {
   const [account, setAccount] = useState<Account | null | undefined>(undefined);
   const [meta, setMeta] = useState<LocalSyncMeta | null>(null);
   const [phase, setPhase] = useState<SyncPhase>("idle");
@@ -71,16 +75,30 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
   const [authPassword, setAuthPassword] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [authAttempt, setAuthAttempt] = useState(0);
   const [mismatchedAccount, setMismatchedAccount] = useState(false);
+  const scopeRef = useRef(new SyncOperationScope());
+  const refreshingRef = useRef(false);
+  const lastRefreshRef = useRef(0);
   const pendingUploadRef = useRef<PendingUpload | null>(null);
   const localFingerprint = useMemo(() => referenceSyncFingerprint(referencesForSync(currentState, meta?.pdfHashes)), [currentState, meta?.pdfHashes]);
 
+  const snapshotRef = useRef({ fingerprint: localFingerprint, accountId: account?.id ?? "" });
+  useEffect(() => { snapshotRef.current = { fingerprint: localFingerprint, accountId: account?.id ?? "" }; }, [localFingerprint, account?.id]);
+
   useEffect(() => {
+    const scope = scopeRef.current;
     let cancelled = false;
     let unsubscribe: () => void = () => undefined;
     void observeFirebaseUser(async (user, enabled) => {
       if (cancelled) return;
+      scopeRef.current.invalidate();
+      const operation = scopeRef.current.capture();
+      setAccount(undefined); setMeta(null); setCloud(null); setPhase("idle");
+      pendingUploadRef.current = null;
       setFirebaseEnabled(enabled);
+      setAuthError("");
       onFirebaseAvailability?.(enabled);
       if (enabled && (!user || !user.emailVerified)) {
         setAccount(null);
@@ -89,20 +107,31 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
         onCampusEntitlement(false);
         return;
       }
-      await loadAccount(enabled);
-    }).then((cleanup) => { unsubscribe = cleanup; });
-    async function loadAccount(useFirebase: boolean) {
+      await loadAccount(enabled, operation);
+    }).then((cleanup) => { if (cancelled) cleanup(); else unsubscribe = cleanup; }).catch(cause => {
+      if (cancelled) return;
+      scopeRef.current.invalidate();
+      setAccount(null);
+      setMeta(null);
+      setCloud(null);
+      setPhase("error");
+      setFirebaseEnabled(null);
+      setAuthError(cause instanceof AuthConfigError ? cause.message : "認証機能を初期化できませんでした。再試行してください。");
+      onFirebaseAvailability?.(null);
+      onCampusEntitlement(null);
+    });
+    async function loadAccount(useFirebase: boolean, operation: ReturnType<SyncOperationScope["capture"]>) {
       try {
         const response = useFirebase
           ? await authenticatedFetch("/api/account", { cache: "no-store" })
           : await fetch("/api/account", { cache: "no-store" });
         if (response.status === 401) {
-          if (!cancelled) { setAccount(null); setMeta(null); onCampusEntitlement(false); }
+          if (!cancelled && !operation.signal.aborted) { setAccount(null); setMeta(null); onCampusEntitlement(false); }
           return;
         }
         if (!response.ok) throw new Error("アカウントを確認できませんでした");
         const result = await response.json() as { account: Account; campusBeta: boolean; legacyLinkAvailable?: boolean };
-        if (cancelled) return;
+        if (cancelled || operation.signal.aborted) return;
         setAccount(result.account);
         setLegacyLinkAvailable(result.legacyLinkAvailable === true);
         onCampusEntitlement(result.campusBeta);
@@ -118,35 +147,44 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
           setMeta(storedMeta);
         }
       } catch {
-        if (!cancelled) { setAccount(null); onCampusEntitlement(null); }
+        if (!cancelled && !operation.signal.aborted) { setAccount(null); onCampusEntitlement(null); }
       }
     }
-    return () => { cancelled = true; unsubscribe(); };
-  }, [onCampusEntitlement, onFirebaseAvailability]);
+    return () => { cancelled = true; scope.invalidate(); unsubscribe(); };
+  }, [onCampusEntitlement, onFirebaseAvailability, authAttempt]);
 
   useEffect(() => {
-    if (!hydrated || !account || !meta?.enabled || phase !== "idle") return;
+    if (!hydrated || !localReady || !account || !meta?.enabled || phase !== "idle") return;
     void reconcile();
     // reconcileは現在の端末状態を使い、アカウント確定時に一度だけ実行する。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account?.id, hydrated, meta?.enabled]);
+  }, [account?.id, hydrated, localReady, meta?.enabled]);
 
   useEffect(() => {
-    if (!hydrated || !account || !meta?.enabled || phase !== "synced" || localFingerprint === meta.fingerprint) return;
+    if (!hydrated || !localReady || !account || !meta?.enabled || phase !== "synced" || localFingerprint === meta.fingerprint) return;
     const timer = window.setTimeout(() => void uploadLocal(meta.revision), 1800);
     return () => window.clearTimeout(timer);
     // uploadLocalは最新stateを閉包し、変更ごとにタイマーを張り直す。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [localFingerprint, phase, meta?.revision, meta?.fingerprint, account?.id]);
+  }, [localFingerprint, localReady, phase, meta?.revision, meta?.fingerprint, account?.id]);
 
   useEffect(() => {
-    const handleOnline = () => {
-      if (account && meta?.enabled) void reconcile();
+    const refresh = () => {
+      if (!account || !mayRefreshSync({ enabled: meta?.enabled === true, hydrated, localReady, visible: document.visibilityState === "visible", online: navigator.onLine, phase, busy: refreshingRef.current })) return;
+      if (Date.now() - lastRefreshRef.current < 30000) return;
+      refreshingRef.current = true;
+      lastRefreshRef.current = Date.now();
+      void reconcile().finally(() => { refreshingRef.current = false; });
     };
-    window.addEventListener("online", handleOnline);
-    return () => window.removeEventListener("online", handleOnline);
+    const online = () => { lastRefreshRef.current = 0; refresh(); };
+    window.addEventListener("online", online);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    const timer = window.setInterval(refresh, 60000);
+    return () => { window.removeEventListener("online", online); window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); window.clearInterval(timer); };
+    // Reinstall listeners with the current state snapshot; never poll during edits or conflicts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account?.id, meta?.enabled]);
+  }, [account?.id, hydrated, localReady, meta?.enabled, meta?.revision, phase, localFingerprint]);
 
   useEffect(() => {
     if (!panelOpen) return;
@@ -163,24 +201,47 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
     return () => window.removeEventListener("manabi-memo:open-account", openPanel);
   }, []);
 
-  async function fetchCloud() {
-    const response = await authenticatedFetch("/api/sync/state", { cache: "no-store" });
+  async function scopedFetch(operation: ReturnType<SyncOperationScope["capture"]>, input: RequestInfo | URL, init: RequestInit = {}) {
+    operation.assertCurrent();
+    const token = await firebaseIdToken();
+    operation.assertCurrent();
+    const headers = new Headers(init.headers);
+    if (token) headers.set("authorization", `Bearer ${token}`);
+    const response = await fetch(input, { ...init, headers, signal: operation.signal });
+    operation.assertCurrent();
+    return response;
+  }
+
+  async function scopedRetry(operation: ReturnType<SyncOperationScope["capture"]>, input: RequestInfo | URL, init: RequestInit) {
+    return retryTransient(() => scopedFetch(operation, input, init), { maxAttempts: 3, delay: retryDelay });
+  }
+
+  async function fetchCloud(operation = scopeRef.current.capture()) {
+    const response = await scopedFetch(operation, "/api/sync/state", { cache: "no-store" });
     if (response.status === 401) {
       setAccount(null);
       throw new Error("ログイン状態を確認できませんでした。");
     }
     const result = await response.json() as CloudEnvelope & { error?: string };
     if (!response.ok) throw new Error(result.error ?? "クラウドデータを確認できませんでした。");
-    setCloud(result);
+    operation.assertCurrent();
     return result;
   }
 
   async function reconcile() {
     if (!account || !hydrated) return;
+    const operation = scopeRef.current.capture();
     setPhase("checking");
     setMessage("");
     try {
-      const remote = await fetchCloud();
+      const remote = await fetchCloud(operation);
+      operation.assertCurrent();
+      if (!sameSyncSnapshot({ fingerprint: localFingerprint, accountId: account.id }, snapshotRef.current)) {
+        setPhase("synced");
+        setMessage("確認中の端末変更を保護しました。最新の状態で再確認します。");
+        return;
+      }
+      setCloud(remote);
       if ((remote.schemaVersion ?? 1) > schemaVersion) {
         throw new Error("クラウドデータが新しい形式です。アプリを更新してから同期してください。");
       }
@@ -225,6 +286,7 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
         return;
       }
       const pdfMeta = await inspectLocalPdfs(remote.pdfs, remote.revision);
+      operation.assertCurrent();
       if (pdfMeta.needsUpload) return void await uploadLocal(remote.revision);
       const next = makeMeta(account.id, remote.revision, localFingerprint, storedMeta, pdfMeta.hashes, pdfMeta.tokens);
       persistMeta(next);
@@ -232,12 +294,13 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
       setPhase("synced");
       setMessage("この端末とクラウドは同じ内容です。");
     } catch (cause) {
-      handleSyncFailure(cause);
+      if (!operation.signal.aborted) handleSyncFailure(cause);
     }
   }
 
   async function uploadLocal(baseRevision: number) {
     if (!account) return;
+    const operation = scopeRef.current.capture();
     setPhase("syncing");
     setProgress("ノートと予定を保存しています");
     try {
@@ -254,14 +317,16 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
         if (!entry) throw new Error(`この端末にPDF本体がありません。再度追加してから同期してください: ${id}`);
         manifests.push({ sessionId: id, size: entry.blob.size, sha256: await hashBlob(entry.blob), noteVersion: tokens[id] ?? "" });
       }
+      operation.assertCurrent();
       let pending = pendingUploadRef.current;
       if (!pending || pending.accountId !== account.id || pending.baseRevision !== baseRevision || pending.fingerprint !== localFingerprint) {
-        const response = await retryAuthenticatedFetch("/api/sync/state", {
+        const response = await scopedRetry(operation, "/api/sync/state", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ baseRevision, schemaVersion, state: syncState, deviceId: deviceId(), pdfIds, pdfs: manifests }),
         });
         const result = await response.json() as { transactionId?: string; revision?: number; error?: string; conflict?: boolean };
+        operation.assertCurrent();
         if (response.status === 409 || result.conflict) return void await showSyncConflict();
         if (!response.ok || typeof result.revision !== "number" || typeof result.transactionId !== "string") throw new Error(result.error ?? "クラウドへ保存できませんでした。");
         pending = { accountId: account.id, baseRevision, targetRevision: result.revision, transactionId: result.transactionId, fingerprint: localFingerprint, manifests };
@@ -276,22 +341,24 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
         const direct = await uploadPdfDirectly(transfer, entry.blob);
         if (direct.conflict) return void await showSyncConflict();
         if (!direct.used) {
-          const response = await retryAuthenticatedFetch(`/api/sync/pdf?sessionId=${encodeURIComponent(manifest.sessionId)}&transactionId=${encodeURIComponent(pending.transactionId)}`, {
+          const response = await scopedRetry(operation, `/api/sync/pdf?sessionId=${encodeURIComponent(manifest.sessionId)}&transactionId=${encodeURIComponent(pending.transactionId)}`, {
             method: "PUT",
             headers: { "content-type": "application/pdf", "x-content-sha256": manifest.sha256, "x-state-revision": String(pending.targetRevision), "x-note-version": encodeURIComponent(manifest.noteVersion) },
             body: entry.blob,
           });
           const result = await response.json().catch(() => ({})) as { error?: string; conflict?: boolean };
-          if (response.status === 409 || result.conflict) return void await showSyncConflict();
+          operation.assertCurrent();
+        if (response.status === 409 || result.conflict) return void await showSyncConflict();
           if (!response.ok) throw new Error(result.error ?? `PDFを同期できませんでした: ${manifest.sessionId}`);
         }
       }
-      const commitResponse = await retryAuthenticatedFetch("/api/sync/state", {
+      const commitResponse = await scopedRetry(operation, "/api/sync/state", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ transactionId: pending.transactionId }),
       });
       const commitResult = await commitResponse.json().catch(() => ({})) as { revision?: number; error?: string; conflict?: boolean };
+      operation.assertCurrent();
       if (commitResponse.status === 409 || commitResult.conflict) return void await showSyncConflict();
       if (!commitResponse.ok || commitResult.revision !== pending.targetRevision) throw new Error(commitResult.error ?? "クラウド同期を確定できませんでした。");
       const next = makeMeta(account.id, pending.targetRevision, referenceSyncFingerprint(syncState), meta, referenceHashes, pdfTokens(currentState));
@@ -302,7 +369,7 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
       setProgress("");
       setMessage("この端末の変更をクラウドへ保存しました。");
     } catch (cause) {
-      handleSyncFailure(cause);
+      if (!operation.signal.aborted) handleSyncFailure(cause);
     }
   }
 
@@ -331,6 +398,7 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
 
   async function downloadCloud(remote = cloud) {
     if (!account || !remote?.exists || !remote.state) return;
+    const operation = scopeRef.current.capture();
     if ((remote.schemaVersion ?? 1) > schemaVersion) {
       setPhase("error");
       setMessage("クラウドデータが新しい形式です。アプリを更新してから同期してください。");
@@ -365,7 +433,9 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
         pdfs.push({ id: item.sessionId, blob });
         hashes[item.sessionId] = sha256;
       }
-      await onApplyCloud(remote.state, pdfs);
+      operation.assertCurrent();
+      await onApplyCloud(remote.state, pdfs, operation.signal);
+      operation.assertCurrent();
       const fingerprint = referenceSyncFingerprint(remote.state);
       const next = makeMeta(account.id, remote.revision, fingerprint, meta, hashes, pdfTokens(remote.state));
       persistMeta(next);
@@ -374,12 +444,13 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
       setProgress("");
       setMessage("クラウドの内容をこの端末へ反映しました。");
     } catch (cause) {
-      handleSyncFailure(cause);
+      if (!operation.signal.aborted) handleSyncFailure(cause);
     }
   }
 
   function acceptRemoteDeletion() {
     if (!account) return;
+    scopeRef.current.invalidate();
     const next = { ...makeMeta(account.id, cloud?.revision ?? 0, localFingerprint, meta), enabled: false };
     persistMeta(next);
     setMeta(next);
@@ -397,6 +468,7 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
 
   function clearPreviousAccountBinding() {
     if (!account || !window.confirm("この端末に残っている以前のアカウントとの同期情報だけを解除します。端末内のノートは削除しません。続けますか？")) return;
+    scopeRef.current.invalidate();
     window.localStorage.removeItem(META_KEY);
     setMismatchedAccount(false);
     setMeta(null);
@@ -406,6 +478,7 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
 
   function stopSync() {
     if (!account) return;
+    scopeRef.current.invalidate();
     const next = { ...makeMeta(account.id, meta?.revision ?? 0, meta?.fingerprint ?? "", meta), enabled: false };
     persistMeta(next);
     setMeta(next);
@@ -415,9 +488,10 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
 
   async function deleteCloud() {
     if (!window.confirm("クラウド上のノート・予定・PDFを削除します。この端末のデータは残ります。よろしいですか？")) return;
+    const operation = scopeRef.current.capture();
     setPhase("syncing");
     try {
-      const response = await authenticatedFetch("/api/sync/state", { method: "DELETE" });
+      const response = await scopedFetch(operation, "/api/sync/state", { method: "DELETE" });
       if (!response.ok) throw new Error("クラウドデータを削除できませんでした。");
       window.localStorage.removeItem(META_KEY);
       setMeta(null);
@@ -425,7 +499,7 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
       setPhase("idle");
       setMessage("クラウド上のデータを削除しました。端末内の内容はそのままです。");
     } catch (cause) {
-      handleSyncFailure(cause);
+      if (!operation.signal.aborted) handleSyncFailure(cause);
     }
   }
 
@@ -484,6 +558,7 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
 
   async function logout() {
     if (!firebaseEnabled) return;
+    scopeRef.current.invalidate();
     await signOutFirebase();
     setAccount(null);
     setMeta(null);
@@ -515,14 +590,16 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
   }
 
   async function showSyncConflict() {
+    const operation = scopeRef.current.capture();
     pendingUploadRef.current = null;
-    const latest = await fetchCloud();
+    const latest = await fetchCloud(operation);
+    operation.assertCurrent();
     setCloud(latest);
     setPhase("conflict");
     setPanelOpen(true);
   }
 
-  const label = account === undefined ? "アカウント確認中" : !account ? "ログイン・同期" : phase === "synced" ? "クラウド同期済み" : phase === "offline" ? "オフライン" : meta?.enabled ? "同期を確認" : "アカウント・同期";
+  const label = authError ? "認証接続エラー" : account === undefined ? "アカウント確認中" : !account ? "ログイン・同期" : phase === "synced" ? "クラウド同期済み" : phase === "offline" ? "オフライン" : meta?.enabled ? "同期を確認" : "アカウント・同期";
   const statusIcon = phase === "syncing" || phase === "checking" ? <LoaderCircle className="spin" size={18} /> : phase === "synced" ? <Check size={18} /> : phase === "offline" ? <CloudOff size={18} /> : <Cloud size={18} />;
 
   return <>
@@ -532,7 +609,11 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
     {panelOpen && <div className="modal-backdrop account-sync-backdrop" role="presentation" onMouseDown={() => setPanelOpen(false)}>
       <section className="account-sync-panel" role="dialog" aria-modal="true" aria-labelledby="account-sync-title" onMouseDown={(event) => event.stopPropagation()}>
         <header><div><p className="eyebrow">ACCOUNT & SYNC BETA</p><h2 id="account-sync-title">アカウントとクラウド同期</h2></div><button type="button" onClick={() => setPanelOpen(false)} aria-label="閉じる"><X size={19} /></button></header>
-        {account === undefined || firebaseEnabled === null ? <div className="account-sync-loading"><LoaderCircle className="spin" size={24} /> ログイン状態を確認しています</div> : !account && firebaseEnabled ? <div className="account-signin-card firebase-signin-card">
+        {authError ? <div className="account-signin-card" role="alert">
+          <span><AlertTriangle size={24} /></span><h3>認証サービスに接続できません</h3>
+          <p>{authError}</p><p>端末内のノート・付箋・PDFはそのまま利用できます。ログイン・同期は再接続まで停止しています。</p>
+          <button type="button" className="account-primary" onClick={() => { setAuthError(""); setAuthAttempt(count => count + 1); }}>再試行</button>
+        </div> : account === undefined || firebaseEnabled === null ? <div className="account-sync-loading"><LoaderCircle className="spin" size={24} /> ログイン状態を確認しています</div> : !account && firebaseEnabled ? <div className="account-signin-card firebase-signin-card">
           <span><UserRound size={24} /></span><h3>同じ学習環境を、PCとスマートフォンで</h3><p>時間割、講義ノート、付箋と資料名・ページ番号を端末間で同期できます。PDF本体と抽出本文は端末内だけに残します。ログインだけでは同期を開始しません。</p>
           <button className="account-google" type="button" onClick={() => void googleSignIn()} disabled={authBusy}><LogIn size={18} /> Googleで続ける</button>
           <div className="account-auth-divider"><span>または</span></div>
@@ -545,7 +626,7 @@ export default function AccountSync({ currentState, schemaVersion, hydrated, loc
           {authMode === "signin" && <button className="account-text-button" type="button" onClick={() => void resetPassword()} disabled={authBusy}>パスワードを忘れた場合</button>}
           {authMessage && <p className="account-auth-message" role="status">{authMessage}</p>}
         </div> : !account ? <div className="account-signin-card">
-          <span><UserRound size={24} /></span><h3>アカウント機能は未設定です</h3><p>Firebaseの公開設定値を.env.localへ追加すると、Googleまたはメールアドレスでログインできます。端末内のノート・PDF・Campus Musterは設定前も利用できます。</p>
+          <span><UserRound size={24} /></span><h3>この環境ではアカウント機能を利用できません</h3><p>ログイン機能は運用者による設定が必要です。端末内のノート・PDF・付箋は引き続き利用できます。</p>
         </div> : <>
           <div className="account-profile"><span><UserRound size={20} /></span><div><strong>{account.displayName}</strong><small>{account.email}</small></div>{firebaseEnabled ? <button type="button" onClick={() => void logout()}>ログアウト</button> : <a href="/signout-with-chatgpt?return_to=%2F">ログアウト</a>}</div>
           {firebaseEnabled && legacyLinkAvailable && <div className="legacy-account-link"><strong>以前のChatGPT同期データがある場合</strong><p>メールアドレスだけでは自動統合しません。旧アカウントでも本人確認したあと、明示的に連携します。</p><button type="button" onClick={() => void linkLegacyAccount()} disabled={authBusy}>確認済みの旧アカウントを連携</button>{authMessage && <p className="account-auth-message" role="status">{authMessage}</p>}</div>}

@@ -1,3 +1,4 @@
+import { normalizeStudyEvidence, type StudyEvidence } from "./learning-model.ts";
 export type AssignmentStatus = "todo" | "doing" | "done";
 export type AttendanceStatus = "present" | "late" | "absent";
 export type StudySupportMode = "off" | "lastMinute" | "standard" | "steady";
@@ -118,6 +119,7 @@ export type CampusState = {
   exams: CampusExam[];
   attendanceRecords: CampusAttendance[];
   studyTasks: CampusStudyTask[];
+  studyEvidence?: StudyEvidence[];
   planningProfile: CampusPlanningProfile;
   gpaProfile: CampusGpaProfile;
   degreePlan: CampusDegreePlan;
@@ -195,6 +197,7 @@ export function normalizeCampusState(value: unknown): CampusState {
     exams: arrayOf(source.exams, normalizeExam),
     attendanceRecords: arrayOf(source.attendanceRecords, normalizeAttendance),
     studyTasks: arrayOf(source.studyTasks, normalizeStudyTask),
+    ...(source.studyEvidence === undefined ? {} : { studyEvidence: normalizeStudyEvidence(source.studyEvidence) }),
     planningProfile: {
       style: oneOf(planning.style, ["early", "normal", "lastMinute"] as const, DEFAULT_PLANNING_PROFILE.style),
       earlyDaysBeforeDue: boundedNumber(planning.earlyDaysBeforeDue, 0, 60, 7),

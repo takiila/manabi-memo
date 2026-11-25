@@ -29,6 +29,7 @@ const server = spawn(process.execPath, [nextBin, "start", "--hostname", "127.0.0
     FIREBASE_PROJECT_ID: "",
     FIREBASE_APP_ID: "",
     CAMPUS_ACCESS_MODE: "authenticated",
+    MANABI_ACADEMIC_API_ENABLED: "true",
     ALLOWED_ACCOUNT_EMAILS: "owner@example.test,other@example.test,third@example.test",
   },
   stdio: ["ignore", "pipe", "pipe"],
@@ -55,6 +56,8 @@ try {
   }
   const blockedAccount = await jsonRequest(`${origin}/api/account`, { headers: outsider });
   assert.equal(blockedAccount.response.status, 403);
+  assert.equal((await jsonRequest(`${origin}/api/academic`,{headers:owner})).response.status,401);
+  assert.equal((await jsonRequest(`${origin}/api/academic`,{method:"POST",headers:owner,body:"{}"})).response.status,401);
   const blockedSync = await jsonRequest(`${origin}/api/sync/state`, { headers: outsider });
   assert.equal(blockedSync.response.status, 403);
   const health = await jsonRequest(`${origin}/api/health`);

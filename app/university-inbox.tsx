@@ -1,12 +1,14 @@
 'use client';
 
-import { useState } from 'react';
-import { applyManabiImport, FIELD_LABELS, informationWarnings, ITEM_LABELS, MAX_IMPORT_BYTES, parseManabiImport, planManabiImport } from './manabi-import-model';
+import { useRef, useState } from 'react';
+import { EmptyICalendarError, parseICalendar } from './ical-import-model';
+import { applyManabiImport, FIELD_LABELS, informationWarnings, ITEM_LABELS, MAX_IMPORT_BYTES, parseManabiImport, planManabiImport, recordCalendarFileAttempt } from './manabi-import-model';
 import { MANABI_AI_PROMPT } from './manabi-import-prompt';
 import sample from '../examples/manabi-import-seminar.json';
 import courseSample from '../examples/manabi-import-courses.json';
+import academicCalendar from '../examples/gunma-info-2026-academic-calendar.json';
 import catalogSample from '../examples/manabi-import-catalog.json';
-import type { ImportItem, ImportItemType, InformationInbox, ManabiImport } from './manabi-import-types';
+import type { CalendarFileAttempt, ImportItem, ImportItemType, InformationInbox, ManabiImport } from './manabi-import-types';
 import type { TransferCourse } from './course-transfer';
 import { courseEntryKey, courseSelectionConflict, planInboxCourses, type CourseEntry } from './inbox-course-model';
 import { InboxCoursePreview } from './inbox-course-preview';
@@ -38,6 +40,10 @@ export function UniversityInbox({ inbox, courses, disabled, onChange, onImport }
   const [recovery, setRecovery] = useState(false), [courseBaseline, setCourseBaseline] = useState('');
   const [courseTerms, setCourseTerms] = useState<Record<string, string>>({}), [courseSelected, setCourseSelected] = useState<string[]>([]), [courseReviewed, setCourseReviewed] = useState(false);
   const [importMode, setImportMode] = useState<'catalog' | 'register'>('catalog');
+  const inputVersion = useRef(0);
+  const [fileAttempt, setFileAttempt] = useState<CalendarFileAttempt | null>(null);
+  const fileReceipt = inbox.calendarFileReceipt;
+  const fileResultLabels = { file_read: '予定あり', file_empty: 'ファイル内の予定0件', file_failed: '読取失敗' };
   const rows = bundle ? planManabiImport(inbox, bundle) : [];
   const stale = Boolean((bundle || recovery) && (baseline !== JSON.stringify(inbox) || courseBaseline !== JSON.stringify(courses)));
   const invalidChoice = rows.some(row => selected.includes(row.item.id) && (row.kind === 'blocked' || (row.warnings.length > 0 && !reviewed.includes(row.item.id))));
@@ -48,22 +54,23 @@ export function UniversityInbox({ inbox, courses, disabled, onChange, onImport }
   const invalidCourses = courseSelectionConflict(selectedCourseRows) || selectedCourseRows.some(row => row.kind === 'blocked') || (selectedCourseRows.some(row => row.warnings.length) && !courseReviewed);
   const filtered = inbox.records.filter(record => (!type || record.item.type === type) && (!unreadOnly || record.status === 'unread') && JSON.stringify([record.collection, record.item]).toLocaleLowerCase('ja-JP').includes(query.toLocaleLowerCase('ja-JP')));
   const schedule = filtered.flatMap(record => Object.entries(record.item.data).filter(([key, value]) => typeof value === 'string' && /^(starts_at|due_at|guidance_at|application_start|application_end|result_at|opens_at|closes_at)$/.test(key)).map(([key, value]) => ({ record, key, date: value as string }))).sort((left, right) => Date.parse(left.date) - Date.parse(right.date));
-  function edit(value: string) { setText(value); setBundle(null); setRecovery(false); setSelected([]); setReviewed([]); setMessage(''); }
+  function edit(value: string) { inputVersion.current++; setFileAttempt(null); setText(value); setBundle(null); setRecovery(false); setSelected([]); setReviewed([]); setMessage(''); }
+  function openPreview(parsed: ManabiImport) {
+    setBundle(parsed); setRecovery(false); setBaseline(JSON.stringify(inbox)); setCourseBaseline(JSON.stringify(courses)); setCourseTerms({}); setCourseReviewed(false);
+    setCourseSelected(planInboxCourses(courses, parsed.items.map(item => ({ collection: parsed.collection, item }))).filter(row => row.kind === 'add' || row.kind === 'blocked').map(row => row.key));
+    setSelected(planManabiImport(inbox, parsed).filter(row => row.kind === 'add').map(row => row.item.id)); setReviewed([]);
+    setMessage('新規項目を選択しています。出典と反映先を確認してください。まだ保存されていません。');
+  }
   function preview() {
-    try {
-      const parsed = parseManabiImport(text);
-      setBundle(parsed); setRecovery(false); setBaseline(JSON.stringify(inbox)); setCourseBaseline(JSON.stringify(courses)); setCourseTerms({}); setCourseReviewed(false);
-      setCourseSelected(planInboxCourses(courses, parsed.items.map(item => ({ collection: parsed.collection, item }))).filter(row => row.kind === 'add' || row.kind === 'blocked').map(row => row.key));
-      setSelected(planManabiImport(inbox, parsed).filter(row => row.kind === 'add').map(row => row.item.id)); setReviewed([]); setMessage('新規項目を選択しています。出典と反映先を確認してください。まだ保存されていません。');
-    }
+    try { openPreview(parseManabiImport(text)); }
     catch (cause) { setBundle(null); setMessage(cause instanceof Error ? cause.message : '解析できませんでした。'); }
   }
   function confirm() {
     if (disabled || stale || invalidCourses || (!recovery && (!bundle || invalidChoice || (!chosen.length && !selectedCourseRows.length))) || (recovery && !selectedCourseRows.length)) return;
     try {
       const next = recovery ? inbox : applyManabiImport(inbox, bundle!, selected, reviewed, baseline);
-      onImport(next, courseEntries, courseTerms, selectedCourseRows.map(row => row.key), courseBaseline);
-      setBundle(null); setRecovery(false); setSelected([]); setReviewed([]);
+      onImport(fileAttempt && !recovery ? recordCalendarFileAttempt(next, fileAttempt) : next, courseEntries, courseTerms, selectedCourseRows.map(row => row.key), courseBaseline);
+      setBundle(null); setFileAttempt(null); setRecovery(false); setSelected([]); setReviewed([]);
       setMessage(selectedCourseRows.length ? `講義${selectedCourseRows.length}件を時間割・ノートに登録しました。${selectedCourseRows[0].course.term}へ切り替えています。上部の保存状態をご確認ください。` : `大学情報${chosen.length}件を保存しました。授業候補の保存だけでは時間割・ノートに登録されません。時間割で対象年度・学期の空き枠から選ぶか、上の授業カタログで確認して登録してください。`);
     } catch (cause) { setMessage(cause instanceof Error ? cause.message : '取り込めませんでした。'); }
   }
@@ -75,21 +82,51 @@ export function UniversityInbox({ inbox, courses, disabled, onChange, onImport }
   return <section className="university-inbox" aria-label="大学情報Inbox">
     <header><p className="eyebrow">UNIVERSITY INBOX</p><h1>大学情報Inbox</h1><p>大学の案内・ゼミ配属・教員情報を、出典と一緒に整理します。</p><p>ChatGPT / Claude / Gemini / ローカルLLMなど、普段使うAIで資料をJSONに変換してください。まなびメモからAIへの送信やAPI呼び出しはありません。</p></header>
     <CourseCatalog key={JSON.stringify(inbox.catalogProfile ?? null)} inbox={inbox} courses={courses} disabled={disabled} onChange={onChange} onImport={onImport} />
-    <section className="inbox-card" aria-label="AIから情報を取り込む">
-      <h2>AIから情報を取り込む</h2><p>① 依頼文と資料をAIへ渡す → ② JSONを貼る → ③ 解析・確認 → ④ 選んで取り込む</p>
+    <section className="inbox-card" aria-label="AI・LMSから情報を取り込む">
+      <h2>AI・LMSから情報を取り込む</h2><p>① 依頼文と資料をAIへ渡す → ② JSONを貼る → ③ 解析・確認 → ④ 選んで取り込む</p>
+      <p>LMSからエクスポートしたICSファイルは、そのまま選べます。提出期限と開始・終了の案内を分け、下の確認画面で選んで保存します。ファイルに含まれない課題の取得や、LMSとの自動同期は行いません。</p>
       <fieldset><legend>講義情報の取り込み先</legend><label className="inbox-check"><input type="radio" name="course-import-mode" checked={importMode === 'catalog'} onChange={() => { setImportMode('catalog'); setCourseReviewed(false); }} />授業カタログ・Inboxに保存（候補を選ぶまで講義・ノートは作らない）</label><label className="inbox-check"><input type="radio" name="course-import-mode" checked={importMode === 'register'} onChange={() => { setImportMode('register'); setCourseReviewed(false); }} />確認した講義を時間割・ノートにも直接登録</label></fieldset>
-      <div className="inbox-actions"><button type="button" onClick={() => void copyPrompt()}>AI向け依頼文をコピー</button><button type="button" onClick={() => edit(JSON.stringify(catalogSample, null, 2))}>授業カタログのサンプルを表示</button><button type="button" onClick={() => edit(JSON.stringify(courseSample, null, 2))}>講義・時間割のサンプルを表示</button><button type="button" onClick={() => edit(JSON.stringify(sample, null, 2))}>ゼミのサンプルを表示</button><button type="button" onClick={() => setPromptVisible(!promptVisible)}>依頼文を表示</button></div>
+      <div className="inbox-actions"><button type="button" onClick={() => void copyPrompt()}>AI向け依頼文をコピー</button><button type="button" onClick={() => edit(JSON.stringify(academicCalendar, null, 2))}>群馬大学・2026年度学年暦を確認</button><button type="button" onClick={() => edit(JSON.stringify(catalogSample, null, 2))}>授業カタログのサンプルを表示</button><button type="button" onClick={() => edit(JSON.stringify(courseSample, null, 2))}>講義・時間割のサンプルを表示</button><button type="button" onClick={() => edit(JSON.stringify(sample, null, 2))}>ゼミのサンプルを表示</button><button type="button" onClick={() => setPromptVisible(!promptVisible)}>依頼文を表示</button></div>
       {promptVisible && <label>AI向け依頼文（Schemaを含む）<textarea readOnly rows={8} value={MANABI_AI_PROMPT} onFocus={event => event.target.select()} /></label>}
-      <label>JSONファイル<input type="file" accept=".json,application/json" disabled={disabled} onChange={async event => {
+      <label>JSON / LMSカレンダー（ICS）ファイル<input type="file" accept=".json,application/json,.ics,text/calendar" disabled={disabled} onChange={async event => {
         const file = event.target.files?.[0]; event.target.value = ''; if (!file) return;
-        if (file.size > MAX_IMPORT_BYTES) { edit(''); setMessage('JSONは1MB以内にしてください。'); return; }
-        try { edit(await file.text()); } catch { edit(''); setMessage('ファイルを読めませんでした。'); }
+        edit('');
+        const version = inputVersion.current;
+        const ical = /\.ics$/i.test(file.name) || file.type === 'text/calendar';
+        const at = new Date().toISOString();
+        try {
+          if (file.size > MAX_IMPORT_BYTES) throw new Error('ファイルは1MB以内にしてください。');
+          const raw = await file.text();
+          if (ical) {
+            const parsed = await parseICalendar(raw);
+            if (version === inputVersion.current) {
+              openPreview(parsed);
+              setFileAttempt({ outcome: 'file_read', at, count: parsed.items.length });
+            }
+          } else if (version === inputVersion.current) {
+            edit(raw);
+          }
+        } catch (cause) {
+          if (version !== inputVersion.current) return;
+          if (ical) setFileAttempt(cause instanceof EmptyICalendarError
+            ? { outcome: 'file_empty', at, count: 0 }
+            : { outcome: 'file_failed', at, reason: 'unreadable' });
+          setMessage(cause instanceof Error ? cause.message : 'ファイルを読めませんでした。');
+        }
       }} /></label>
       <label>JSONを貼り付け<textarea rows={10} value={text} onChange={event => edit(event.target.value)} spellCheck={false} placeholder={'{"schema_version":"1.0","collection":"大学・年度の識別子","items":[…]}'} /></label>
       <button type="button" onClick={preview} disabled={disabled || !text.trim()}>JSONを解析して確認</button>
       <p role="status" aria-live="polite">{message}</p>
+      {fileAttempt && !recovery && <button type="button" disabled={disabled || stale} onClick={() => {
+        const nextInbox = recordCalendarFileAttempt(inbox, fileAttempt);
+        onChange(nextInbox);
+        if (bundle) setBaseline(JSON.stringify(nextInbox));
+        setFileAttempt(null);
+        setMessage('ICSの読取結果を記録しました。大学側の掲載状況は未確認です。');
+      }}>読取結果だけ記録する</button>}
+      {fileReceipt && <p>ICSファイルの最終読取試行 <time dateTime={fileReceipt.latest.at}>{new Date(fileReceipt.latest.at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</time>（{fileResultLabels[fileReceipt.latest.outcome]}）。最終読取成功 {fileReceipt.lastSuccess ? new Date(fileReceipt.lastSuccess.at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) : '未記録'}。大学側の対象期間・掲載状況は未確認です。</p>}
       {disabled && <p role="alert">端末の読み込み・保存状態を確認するまで、取り込みと既読の変更を停止しています。</p>}
-      {stale && <p role="alert">確認後に大学情報が変わりました。もう一度「JSONを解析して確認」を押してください。</p>}
+      {stale && <p role="alert">確認後に大学情報が変わりました。ファイルを選び直すか、貼り付けたJSONを再解析してください。</p>}
       {bundle && <section aria-label="取り込みプレビュー">
         <h3>取り込みプレビュー</h3><p>情報集合: {bundle.collection}</p>
         <button type="button" disabled={disabled || stale} onClick={() => setSelected(rows.filter(row => row.kind === 'add' || row.kind === 'update').map(row => row.item.id))}>新規・更新候補をすべて選択</button>

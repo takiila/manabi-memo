@@ -128,3 +128,14 @@ test("バックアップmergeはCampusの衝突レコードを再ID化し、参�
   assert.equal(result.pdfs.length, 1);
   assert.notEqual(result.pdfs[0].id, "session-1");
 });
+
+
+test("学習記録のバックアップ結合は講義IDと重複記録IDを安全に移す",async()=>{
+  const {mergeCampusImported}=await import("../app/data-migration-model.ts");
+  const evidence={id:"r",courseId:"c",topic:"証明",day:"2026-10-01",outcome:"hinted",minutes:5,createdAt:"2026-10-01T01:00:00Z"};
+  const campus=normalizeCampusState({studyEvidence:[evidence]});
+  const merged=mergeCampusImported(campus,campus,new Map([["c","c-new"]]));
+  assert.equal(merged.studyEvidence.length,2);
+  assert.notEqual(merged.studyEvidence[1].id,"r");
+  assert.equal(merged.studyEvidence[1].courseId,"c-new");
+});
