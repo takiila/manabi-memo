@@ -1,14 +1,14 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { parseICalendar } from './ical-import-model';
-import { applyManabiImport, FIELD_LABELS, informationWarnings, ITEM_LABELS, MAX_IMPORT_BYTES, parseManabiImport, planManabiImport } from './manabi-import-model';
+import { EmptyICalendarError, parseICalendar } from './ical-import-model';
+import { applyManabiImport, FIELD_LABELS, informationWarnings, ITEM_LABELS, MAX_IMPORT_BYTES, parseManabiImport, planManabiImport, recordCalendarFileAttempt } from './manabi-import-model';
 import { MANABI_AI_PROMPT } from './manabi-import-prompt';
 import sample from '../examples/manabi-import-seminar.json';
 import courseSample from '../examples/manabi-import-courses.json';
 import academicCalendar from '../examples/gunma-info-2026-academic-calendar.json';
 import catalogSample from '../examples/manabi-import-catalog.json';
-import type { ImportItem, ImportItemType, InformationInbox, ManabiImport } from './manabi-import-types';
+import type { CalendarFileAttempt, ImportItem, ImportItemType, InformationInbox, ManabiImport } from './manabi-import-types';
 import type { TransferCourse } from './course-transfer';
 import { courseEntryKey, courseSelectionConflict, planInboxCourses, type CourseEntry } from './inbox-course-model';
 import { InboxCoursePreview } from './inbox-course-preview';
@@ -41,6 +41,9 @@ export function UniversityInbox({ inbox, courses, disabled, onChange, onImport }
   const [courseTerms, setCourseTerms] = useState<Record<string, string>>({}), [courseSelected, setCourseSelected] = useState<string[]>([]), [courseReviewed, setCourseReviewed] = useState(false);
   const [importMode, setImportMode] = useState<'catalog' | 'register'>('catalog');
   const inputVersion = useRef(0);
+  const [fileAttempt, setFileAttempt] = useState<CalendarFileAttempt | null>(null);
+  const fileReceipt = inbox.calendarFileReceipt;
+  const fileResultLabels = { file_read: '予定あり', file_empty: 'ファイル内の予定0件', file_failed: '読取失敗' };
   const rows = bundle ? planManabiImport(inbox, bundle) : [];
   const stale = Boolean((bundle || recovery) && (baseline !== JSON.stringify(inbox) || courseBaseline !== JSON.stringify(courses)));
   const invalidChoice = rows.some(row => selected.includes(row.item.id) && (row.kind === 'blocked' || (row.warnings.length > 0 && !reviewed.includes(row.item.id))));
@@ -51,7 +54,7 @@ export function UniversityInbox({ inbox, courses, disabled, onChange, onImport }
   const invalidCourses = courseSelectionConflict(selectedCourseRows) || selectedCourseRows.some(row => row.kind === 'blocked') || (selectedCourseRows.some(row => row.warnings.length) && !courseReviewed);
   const filtered = inbox.records.filter(record => (!type || record.item.type === type) && (!unreadOnly || record.status === 'unread') && JSON.stringify([record.collection, record.item]).toLocaleLowerCase('ja-JP').includes(query.toLocaleLowerCase('ja-JP')));
   const schedule = filtered.flatMap(record => Object.entries(record.item.data).filter(([key, value]) => typeof value === 'string' && /^(starts_at|due_at|guidance_at|application_start|application_end|result_at|opens_at|closes_at)$/.test(key)).map(([key, value]) => ({ record, key, date: value as string }))).sort((left, right) => Date.parse(left.date) - Date.parse(right.date));
-  function edit(value: string) { inputVersion.current++; setText(value); setBundle(null); setRecovery(false); setSelected([]); setReviewed([]); setMessage(''); }
+  function edit(value: string) { inputVersion.current++; setFileAttempt(null); setText(value); setBundle(null); setRecovery(false); setSelected([]); setReviewed([]); setMessage(''); }
   function openPreview(parsed: ManabiImport) {
     setBundle(parsed); setRecovery(false); setBaseline(JSON.stringify(inbox)); setCourseBaseline(JSON.stringify(courses)); setCourseTerms({}); setCourseReviewed(false);
     setCourseSelected(planInboxCourses(courses, parsed.items.map(item => ({ collection: parsed.collection, item }))).filter(row => row.kind === 'add' || row.kind === 'blocked').map(row => row.key));
@@ -66,8 +69,8 @@ export function UniversityInbox({ inbox, courses, disabled, onChange, onImport }
     if (disabled || stale || invalidCourses || (!recovery && (!bundle || invalidChoice || (!chosen.length && !selectedCourseRows.length))) || (recovery && !selectedCourseRows.length)) return;
     try {
       const next = recovery ? inbox : applyManabiImport(inbox, bundle!, selected, reviewed, baseline);
-      onImport(next, courseEntries, courseTerms, selectedCourseRows.map(row => row.key), courseBaseline);
-      setBundle(null); setRecovery(false); setSelected([]); setReviewed([]);
+      onImport(fileAttempt && !recovery ? recordCalendarFileAttempt(next, fileAttempt) : next, courseEntries, courseTerms, selectedCourseRows.map(row => row.key), courseBaseline);
+      setBundle(null); setFileAttempt(null); setRecovery(false); setSelected([]); setReviewed([]);
       setMessage(selectedCourseRows.length ? `講義${selectedCourseRows.length}件を時間割・ノートに登録しました。${selectedCourseRows[0].course.term}へ切り替えています。上部の保存状態をご確認ください。` : `大学情報${chosen.length}件を保存しました。授業候補の保存だけでは時間割・ノートに登録されません。時間割で対象年度・学期の空き枠から選ぶか、上の授業カタログで確認して登録してください。`);
     } catch (cause) { setMessage(cause instanceof Error ? cause.message : '取り込めませんでした。'); }
   }
@@ -89,21 +92,39 @@ export function UniversityInbox({ inbox, courses, disabled, onChange, onImport }
         const file = event.target.files?.[0]; event.target.value = ''; if (!file) return;
         edit('');
         const version = inputVersion.current;
-        if (file.size > MAX_IMPORT_BYTES) { setMessage('ファイルは1MB以内にしてください。'); return; }
+        const ical = /\.ics$/i.test(file.name) || file.type === 'text/calendar';
+        const at = new Date().toISOString();
         try {
+          if (file.size > MAX_IMPORT_BYTES) throw new Error('ファイルは1MB以内にしてください。');
           const raw = await file.text();
-          const ical = /\.ics$/i.test(file.name) || file.type === 'text/calendar';
           if (ical) {
             const parsed = await parseICalendar(raw);
-            if (version === inputVersion.current) openPreview(parsed);
+            if (version === inputVersion.current) {
+              openPreview(parsed);
+              setFileAttempt({ outcome: 'file_read', at, count: parsed.items.length });
+            }
           } else if (version === inputVersion.current) {
             edit(raw);
           }
-        } catch (cause) { if (version === inputVersion.current) setMessage(cause instanceof Error ? cause.message : 'ファイルを読めませんでした。'); }
+        } catch (cause) {
+          if (version !== inputVersion.current) return;
+          if (ical) setFileAttempt(cause instanceof EmptyICalendarError
+            ? { outcome: 'file_empty', at, count: 0 }
+            : { outcome: 'file_failed', at, reason: 'unreadable' });
+          setMessage(cause instanceof Error ? cause.message : 'ファイルを読めませんでした。');
+        }
       }} /></label>
       <label>JSONを貼り付け<textarea rows={10} value={text} onChange={event => edit(event.target.value)} spellCheck={false} placeholder={'{"schema_version":"1.0","collection":"大学・年度の識別子","items":[…]}'} /></label>
       <button type="button" onClick={preview} disabled={disabled || !text.trim()}>JSONを解析して確認</button>
       <p role="status" aria-live="polite">{message}</p>
+      {fileAttempt && !recovery && <button type="button" disabled={disabled || stale} onClick={() => {
+        const nextInbox = recordCalendarFileAttempt(inbox, fileAttempt);
+        onChange(nextInbox);
+        if (bundle) setBaseline(JSON.stringify(nextInbox));
+        setFileAttempt(null);
+        setMessage('ICSの読取結果を記録しました。大学側の掲載状況は未確認です。');
+      }}>読取結果だけ記録する</button>}
+      {fileReceipt && <p>ICSファイルの最終読取試行 <time dateTime={fileReceipt.latest.at}>{new Date(fileReceipt.latest.at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</time>（{fileResultLabels[fileReceipt.latest.outcome]}）。最終読取成功 {fileReceipt.lastSuccess ? new Date(fileReceipt.lastSuccess.at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) : '未記録'}。大学側の対象期間・掲載状況は未確認です。</p>}
       {disabled && <p role="alert">端末の読み込み・保存状態を確認するまで、取り込みと既読の変更を停止しています。</p>}
       {stale && <p role="alert">確認後に大学情報が変わりました。ファイルを選び直すか、貼り付けたJSONを再解析してください。</p>}
       {bundle && <section aria-label="取り込みプレビュー">

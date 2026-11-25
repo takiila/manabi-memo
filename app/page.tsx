@@ -4457,6 +4457,7 @@ function hasMeaningfulState(state: SavedState) {
     || campus.gpaProfile.plans.length
     || campus.degreePlan.categories.length
     || state.inbox?.records.length
+    || state.inbox?.calendarFileReceipt
     || state.inbox?.catalogProfile
     || state.planner?.todos.length
     || state.planner?.events.length,

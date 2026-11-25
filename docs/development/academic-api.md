@@ -21,3 +21,7 @@ LMSへの提出・出席操作ではなく本人の記録のみ。同期競合�
 `POST /mcp` に学業用6ツール（概要取得、出席記録、学習結果記録、提出済み記録、課題追加、試験追加）を実装。現在の2026-07-28形式と旧initialize形式の限定的なStreamable HTTP実装で、認証・実クライアントの互換確認を要する。読み取り・書き込みは別scope、書き込みは直前のrevision・確定済みID・明示確認を要求する。件数を制限して省略件数を返す。公開前にMCP Inspector・ChatGPT実接続・隔離DB・OAuth再送/失効/他アカウント・PDF競合・実機の検証が必須。
 
 環境変数（初期未設定）: MANABI_MCP_ENABLED, MANABI_MCP_ORIGIN, MANABI_MCP_CLIENT_ID, MANABI_MCP_REDIRECT_URI, MANABI_MCP_CLIENT_SECRET（固定クライアントがsecretを使用する場合のみ）。Firebaseと許可アカウント一覧も必須。OAuthメタデータを提供し、/connect/manabi から権限を確認・解除できる。OpenAIの公式認証仕様 https://developers.openai.com/plugins/build/auth およびMCP Streamable HTTP仕様 https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http を参照。秘密や実メールはGitへ含めない。
+
+## 大学情報の取得状況
+
+[群馬大学との連携](gunma-university-integration.md)に情報源と確認範囲を整理した。OAuth/MCPが返す収集状況は現時点で未確認。まなびメモの端末で読んだICSファイルの記録を、大学側の網羅性や最新情報と解釈しない。

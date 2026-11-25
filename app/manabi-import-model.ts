@@ -1,7 +1,7 @@
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import schema from '../schema/manabi-memo.schema.json' with { type: 'json' };
-import type { ImportItem, ImportItemType, ImportPlanRow, InformationInbox, ManabiImport } from './manabi-import-types';
+import type { CalendarFileAttempt, CalendarFileReceipt, ImportItem, ImportItemType, ImportPlanRow, InformationInbox, ManabiImport } from './manabi-import-types';
 import { normalizeCatalogProfile } from './course-catalog-model.ts';
 
 export const MAX_IMPORT_BYTES = 1024 * 1024;
@@ -125,6 +125,31 @@ export function applyManabiImport(inbox: InformationInbox, bundle: ManabiImport,
   return result;
 }
 
+function normalizeCalendarFileAttempt(value: CalendarFileAttempt): CalendarFileAttempt {
+  if (!value || !validateTimestamp(value.at)) throw new Error('ICS確認日時の形式が不正です。');
+  const at = new Date(value.at).toISOString();
+  if (value.outcome === 'file_failed' && value.reason === 'unreadable') {
+    return { at, outcome: value.outcome, reason: value.reason };
+  }
+  if (value.outcome === 'file_empty' && value.count === 0) return { at, outcome: value.outcome, count: 0 };
+  if (value.outcome === 'file_read' && Number.isInteger(value.count) && value.count >= 1 && value.count <= 200) {
+    return { at, outcome: value.outcome, count: value.count };
+  }
+  throw new Error('ICS確認結果の形式が不正です。');
+}
+
+function mergeCalendarFileReceipts(left: CalendarFileReceipt | undefined, right: CalendarFileReceipt): CalendarFileReceipt {
+  const latest = !left || right.latest.at > left.latest.at ? right.latest : left.latest;
+  const lastSuccess = right.lastSuccess && (!left?.lastSuccess || right.lastSuccess.at > left.lastSuccess.at) ? right.lastSuccess : left?.lastSuccess;
+  return { latest, ...(lastSuccess ? { lastSuccess } : {}) };
+}
+
+export function recordCalendarFileAttempt(inbox: InformationInbox, attempt: CalendarFileAttempt): InformationInbox {
+  const latest = normalizeCalendarFileAttempt(attempt);
+  const receipt = latest.outcome === 'file_failed' ? { latest } : { latest, lastSuccess: latest };
+  return { ...inbox, calendarFileReceipt: mergeCalendarFileReceipts(inbox.calendarFileReceipt, receipt) };
+}
+
 export function normalizeInformationInbox(value: unknown): InformationInbox {
   if (value === undefined) return structuredClone(EMPTY_INFORMATION_INBOX);
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('大学情報Inboxの保存形式が不正です。');
@@ -143,12 +168,23 @@ export function normalizeInformationInbox(value: unknown): InformationInbox {
     });
     return { id: record.id, collection: record.collection, item, status: record.status, importedAt: record.importedAt, updatedAt: record.updatedAt, history };
   });
-  return { version: 1, records, ...(inbox.catalogProfile === undefined ? {} : { catalogProfile: normalizeCatalogProfile(inbox.catalogProfile) }) };
+  const calendarFileReceipt = inbox.calendarFileReceipt === undefined ? undefined : (() => {
+    const { latest, lastSuccess } = inbox.calendarFileReceipt;
+    const attempt = normalizeCalendarFileAttempt(latest);
+    const success = lastSuccess === undefined ? undefined : normalizeCalendarFileAttempt(lastSuccess);
+    if (success?.outcome === 'file_failed' || (success && success.at > attempt.at)) {
+      throw new Error('ICSの最終読取成功日時が不正です。');
+    }
+    return mergeCalendarFileReceipts(success ? { latest: success, lastSuccess: success } : undefined,
+      attempt.outcome === 'file_failed' ? { latest: attempt } : { latest: attempt, lastSuccess: attempt });
+  })();
+  return { version: 1, records, ...(calendarFileReceipt ? { calendarFileReceipt } : {}), ...(inbox.catalogProfile === undefined ? {} : { catalogProfile: normalizeCatalogProfile(inbox.catalogProfile) }) };
 }
 
 export function mergeInformationInboxes(existingValue: unknown, incomingValue: unknown): InformationInbox {
   const existing = normalizeInformationInbox(existingValue), incoming = normalizeInformationInbox(incomingValue);
   if (!existing.catalogProfile && incoming.catalogProfile) existing.catalogProfile = incoming.catalogProfile;
+  if (incoming.calendarFileReceipt) existing.calendarFileReceipt = mergeCalendarFileReceipts(existing.calendarFileReceipt, incoming.calendarFileReceipt);
   for (const record of incoming.records) {
     if (existing.records.some(entry => identity(entry.collection, entry.item) === identity(record.collection, record.item) && canonical(entry.item) === canonical(record.item) && canonical(entry.history) === canonical(record.history))) continue;
     const id = existing.records.some(entry => entry.id === record.id) ? crypto.randomUUID() : record.id;
