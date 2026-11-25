@@ -7,6 +7,8 @@ GET /api/academic は同期版、最終同期日時、履修科目・課題・�
 POST /api/academic は expectedRevision と command を受け取る。command.confirmed は本人の明示確認時のみ true。courseId はGETで取得した完全一致ID。操作:
 - assignment_submitted: assignmentId, expectedStatus (todo/doing)
 - attendance: day (YYYY-MM-DD), status (present/late/absent), expectedStatus (現在の記録値、未記録なら null)
-- study: recordId (再送で同じ値), day, topic, outcome (explanation/hinted/independent/retained), minutes
+- study: recordId (再送で同じ値), day, topic, outcome (planned/explanation/hinted/independent/retained), minutes
 
 LMSへの提出・出席操作ではなく本人の記録のみ。同期競合、PDF実体、未完了同期は拒否。新旧クライアントの形式の逆戻りを拒否する。初回受入は架空データと隔離DBで行い、認証なし・他アカウント・競合・PDFあり・冪等性・復元を確認する。本番有効化は利用者承認後。
+
+- assignment_create / exam_create: recordId, title, at (明示された日付/日時), source (根拠の名称). 同じIDの再送は冪等。同名の異なるIDは要確認。未知の締切や試験日時は作成せず確認する。

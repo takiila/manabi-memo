@@ -25,6 +25,7 @@ export function academicSnapshot(state:unknown) {
     assignments:scoped(state.campus.assignments).map(row=>fields(row,['id','courseId','title','dueISO','status','importance','estimatedMinutes'])),
     exams:scoped(state.campus.exams).map(row=>fields(row,['id','courseId','title','datetime','examType','location'])),
     attendance:scoped(state.campus.attendanceRecords).map(row=>fields(row,['id','courseId','dateISO','period','status'])),
+    classDates:rows(state.sessions).filter(row=>ids.has(row.courseId)&&!row.deletedAt&&typeof row.scheduledOn==='string'&&row.scheduledOn).map(row=>fields(row,['courseId','id','scheduledOn','sessionNumber'])),
     learning:normalizeStudyEvidence(state.campus.studyEvidence).filter(row=>ids.has(row.courseId)).map(row=>fields(row,['id','courseId','topic','day','outcome','minutes'])),
   };
 }
@@ -36,6 +37,27 @@ export function applyAcademicCommand(state:unknown,command:unknown,today:string,
   if(courses.length!==1)throw new Error('科目を一意に特定できません。');
   const course=courses[0];
   const replace=(key:string,value:unknown)=>({...state,campus:{...campus,[key]:value}});
+  if(command.kind==='assignment_create'||command.kind==='exam_create'){
+    const isExam=command.kind==='exam_create';
+    const id=required(command.recordId);
+    const title=required(command.title,160);
+    const date=required(command.at,80);
+    const source=required(command.source,300);
+    if(!isPlannerDate(date,false))throw new Error('日時を確認してください。');
+    const key=isExam?'exams':'assignments';
+    const dateKey=isExam?'datetime':'dueISO';
+    const list=rows(campus[key]);
+    const existing=list.find(row=>row.id===id);
+    if(existing){
+      if(existing.courseId===courseId&&existing.title===title&&existing[dateKey]===date)return state;
+      throw new Error('同じIDの記録があります。');
+    }
+    if(list.some(row=>row.courseId===courseId&&typeof row.title!=='string'))throw new Error('保存済みの件名を確認してください。');
+    if(list.some(row=>row.courseId===courseId&&typeof row.title==='string'&&row.title.normalize('NFKC').trim()===title.normalize('NFKC')))throw new Error('同名の記録があります。再取得して重複を確認してください。');
+    const base={id,courseId,termId:typeof course.term==='string'?course.term:'学期未設定',title,[dateKey]:date,note:'出典：'+source,createdAt};
+    const next=isExam?{...base,examType:'other',location:''}:{...base,status:'todo',type:'課題',importance:2,estimatedMinutes:0};
+    return replace(key,[...list,next]);
+  }
   if(command.kind==='assignment_submitted'){
     const id=required(command.assignmentId);
     const assignments=rows(campus.assignments);

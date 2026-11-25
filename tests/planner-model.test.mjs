@@ -267,3 +267,27 @@ test('学業APIは明示確認・科目ID・現状照合を要求し、対象外
  assert.equal(applyAcademicCommand(next,command,'2026-10-09','2026-10-09T00:00:00Z'),next);
  assert.equal(input.campus.assignments[0].status,'todo');
 });
+
+test('未着手の試験範囲は学習実績にせず、同じ範囲の自力解答記録を消さない',async()=>{
+ const {reviewTopics,weeklyLearning}=await import('../app/learning-model.ts');
+ const first={id:'p',courseId:'c',topic:'証明',day:'2026-10-08',outcome:'planned',minutes:0,createdAt:'2026-10-08T01:00:00Z'};
+ const done={...first,id:'d',day:'2026-10-09',outcome:'independent',minutes:15,createdAt:'2026-10-09T01:00:00Z'};
+ const later={...first,id:'p2',day:'2026-10-10'};
+ assert.equal(weeklyLearning([first],'2026-10-09').days,0);
+ assert.equal(weeklyLearning([first,done,later],'2026-10-10').days,1);
+ assert.equal(reviewTopics([first,done,later],'2026-10-10')[0].outcome,'independent');
+ assert.match(academicBrief({...state,campus:{...state.campus,studyEvidence:[first,done]}},course.term,new Date(2026,9,10)),/自力で解答/);
+});
+test('課題と試験の作成は出典、確定日時、安定IDを要求し同名を重複させない',async()=>{
+ const {applyAcademicCommand}=await import('../app/academic-api-model.ts');
+ const command={kind:'assignment_create',confirmed:true,courseId:'c',recordId:'new',title:'新しい課題',at:'2026-10-10',source:'講義案内'};
+ const next=applyAcademicCommand(state,command,'2026-10-09','2026-10-09T00:00:00Z');
+ assert.equal(next.campus.assignments[0].dueISO,'2026-10-10');
+ assert.equal(next.campus.assignments[0].status,'todo');
+ assert.equal(applyAcademicCommand(next,command,'2026-10-09','2026-10-09T01:00:00Z'),next);
+ assert.throws(()=>applyAcademicCommand(next,{...command,recordId:'other'},'2026-10-09','2026-10-09T01:00:00Z'));
+ assert.throws(()=>applyAcademicCommand(state,{...command,source:''},'2026-10-09','2026-10-09T01:00:00Z'));
+ assert.throws(()=>applyAcademicCommand(state,{...command,at:'2026-02-30'},'2026-10-09','2026-10-09T01:00:00Z'));
+ const exam=applyAcademicCommand(state,{...command,kind:'exam_create'},'2026-10-09','2026-10-09T01:00:00Z');
+ assert.equal(exam.campus.exams[0].datetime,'2026-10-10');
+});

@@ -1,5 +1,6 @@
 import type { AttendanceStatus, CampusState } from './campus-model';
 import type { InformationInbox } from './manabi-import-types';
+import { OUTCOME_LABELS, reviewTopics } from './learning-model.ts';
 
 export type ChecklistItem = { id: string; text: string; done: boolean; registered: boolean; due: string; priority: boolean; workAt: string; deletedAt: string | null };
 export type PersonalTodo = ChecklistItem & { courseId: string; tags: string[] };
@@ -282,6 +283,8 @@ export function academicBrief(state: PlannerInput, term: string, now = new Date(
   const classes = homeAttendanceRows(state, today, term);
   const pending = catchUpAttendanceRows(state, today, term);
   const priorities = academicPriorities(state, term, now);
+  const courseTitles = new Map(state.courses.filter(c=>!c.archivedAt&&!c.deletedAt&&(term==='all'||c.term===term)).map(c=>[c.id,c.title]));
+  const topics = reviewTopics((state.campus.studyEvidence??[]).filter(row=>courseTitles.has(row.courseId)), today);
   const status = (row: HomeAttendanceRow) => row.conflict ? '重複・要確認' : row.status === 'present' ? '出席記録あり' : row.status === 'late' ? '遅刻記録あり' : row.status === 'absent' ? '欠席記録あり' : '未確認';
   const group = { urgent: '今日・明日', overdue: '期限経過', upcoming: '近日', review: '要確認' };
   return [
@@ -301,6 +304,9 @@ export function academicBrief(state: PlannerInput, term: string, now = new Date(
     ...priorities.slice(0, 40).map(item => '- [' + group[item.group] + ']' + clean(item.courseTitle) + ' / ' + clean(item.title) + ' / ' + (item.at ? localPlannerDateTime(item.at) : '日時未設定') + ' / ' + item.reason),
     ...(priorities.length ? [] : ['該当する登録済み情報は0件。未取得情報は含まれません。']),
     ...(priorities.length > 40 ? ['他' + (priorities.length - 40) + '件省略。追加確認が必要。'] : []),
+    '【学習範囲・前回の解答結果】',
+    ...topics.slice(0,30).map(row=>'- '+clean(courseTitles.get(row.courseId)??'')+' / '+clean(row.topic)+' / '+OUTCOME_LABELS[row.outcome]+' / 復習目安 '+row.reviewOn),
+    ...(topics.length>30?['他'+(topics.length-30)+'件省略']:[]),
     '【相談】',
     '締切・試験・必須の確認事項を踏まえ、今日の最優先の作業と、少量の試験勉強を提案してください。',
     '必要であれば今日使える時間や残作業量を私に尋ねてください。欠席上限や未確認の情報を推測しないでください。',

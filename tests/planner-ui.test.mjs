@@ -273,3 +273,22 @@ test('ChatGPT相談文は利用者の操作で生成され、閉じるまで送�
     assert.equal(view.host.querySelector('textarea[aria-label="ChatGPTへの相談文"]'), null);
   } finally { view.close(); }
 });
+
+
+test('学習画面で未着手の範囲を追加し、勉強時間の切替ができる',async()=>{
+ const {LearningPanel}=await import('../app/learning-panel.tsx');
+ let saved;
+ const view=mount(h(LearningPanel,{courses:[course],records:[],priorities:[],disabled:false,onRecord:row=>saved=row}));
+ try{
+   click(button(view.host,'15分'));
+   assert.equal(button(view.host,'15分').getAttribute('aria-pressed'),'true');
+   const selects=view.host.querySelectorAll('select');
+   act(()=>{selects[0].value='c';selects[0].dispatchEvent(new dom.window.Event('change',{bubbles:true}));});
+   fill(input(view.host,'範囲・問題'),'証明');
+   act(()=>{selects[1].value='planned';selects[1].dispatchEvent(new dom.window.Event('change',{bubbles:true}));});
+   click(button(view.host,'学習結果を保存'));
+   assert.equal(saved.topic,'証明');
+   assert.equal(saved.outcome,'planned');
+   assert.equal(saved.minutes,0);
+ }finally{view.close();}
+});

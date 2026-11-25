@@ -55,5 +55,5 @@ export async function POST(request:Request){
       if(updated.changes!==1)return json({error:'同期版が変わりました。'},409);
       return json({ok:true,changed:true,revision:row!.revision+1});
     });
-  }catch(cause){return json({error:cause instanceof Error && /^(本人|対象|科目|課題|提出|授業|出席|学習|以前|未対応|保存|同期済み)/.test(cause.message)?cause.message:'操作を登録できませんでした。'},400);}
+  }catch(cause){return json({error:cause instanceof Error && /^(本人|対象|科目|課題|提出|授業|出席|学習|以前|未対応|保存|同期済み|日時|同じ|同名)/.test(cause.message)?cause.message:'操作を登録できませんでした。'},400);}
 }
