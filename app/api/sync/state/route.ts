@@ -175,6 +175,8 @@ export async function DELETE(request: Request) {
   const deleted = await withTransaction(async (transaction) => {
     const current = firstOrNull(await transaction.queryAll<{ revision: number; schema_version: number }>("SELECT revision, schema_version FROM synced_app_state WHERE user_id = ?", [accountId]));
     const nextRevision = (current?.revision ?? 0) + 1;
+    await transaction.execute("UPDATE academic_oauth_links SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL", [now,accountId]);
+    await transaction.execute("DELETE FROM academic_oauth_codes WHERE user_id = ?", [accountId]);
     await transaction.execute("DELETE FROM synced_pdf WHERE user_id = ?", [accountId]);
     await transaction.execute("DELETE FROM sync_transaction_pdfs WHERE user_id = ?", [accountId]);
     await transaction.execute("DELETE FROM sync_transactions WHERE user_id = ?", [accountId]);

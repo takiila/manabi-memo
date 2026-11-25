@@ -291,3 +291,20 @@ test('課題と試験の作成は出典、確定日時、安定IDを要求し同
  const exam=applyAcademicCommand(state,{...command,kind:'exam_create'},'2026-10-09','2026-10-09T01:00:00Z');
  assert.equal(exam.campus.exams[0].datetime,'2026-10-10');
 });
+
+test('ChatGPT連携のOAuthは固定HTTPS先・PKCE・resource・scopeを要求する',async()=>{
+ const {configuredOAuth,parseAuthorization,authorizationRedirect,pkceMatches,tokenClientAllowed}=await import('../lib/server/academic-oauth-model.ts');
+ const cfg=configuredOAuth({MANABI_MCP_ENABLED:'true',MANABI_MCP_ORIGIN:'https://app.example.test',MANABI_MCP_CLIENT_ID:'test-client',MANABI_MCP_REDIRECT_URI:'https://chatgpt.com/connector_platform_oauth_redirect'});
+ assert.ok(cfg);
+ assert.equal(configuredOAuth({MANABI_MCP_ENABLED:'true',MANABI_MCP_ORIGIN:'https://app.example.test',MANABI_MCP_CLIENT_ID:'test-client',MANABI_MCP_REDIRECT_URI:'https://evil.example.test'}),null);
+ const verifier='dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk',challenge='E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
+ assert.equal(pkceMatches(verifier,challenge),true);assert.equal(pkceMatches(verifier+'x',challenge),false);
+ const params=new URLSearchParams({client_id:cfg.clientId,redirect_uri:cfg.redirectUri,response_type:'code',resource:cfg.resource,scope:'manabi.read manabi.write',state:'test-state',code_challenge:challenge,code_challenge_method:'S256'});
+ const request=parseAuthorization(params,cfg);
+ assert.equal(new URL(authorizationRedirect(cfg,request,'fake-code')).searchParams.get('iss'),cfg.issuer);
+ for(const [key,value] of [['redirect_uri','https://evil.example.test'],['resource','https://other.example.test'],['code_challenge_method','plain'],['scope','manabi.admin']]){
+   const bad=new URLSearchParams(params);bad.set(key,value);assert.throws(()=>parseAuthorization(bad,cfg));
+ }
+ assert.equal(tokenClientAllowed(new URLSearchParams({client_id:'test-client'}),'',cfg),true);
+ assert.equal(tokenClientAllowed(new URLSearchParams({client_id:'wrong'}),'',cfg),false);
+});

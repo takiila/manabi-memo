@@ -25,6 +25,9 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   if (
     url.pathname.startsWith("/api/")
+    || url.pathname.startsWith("/.well-known/")
+    || url.pathname.startsWith("/connect/manabi")
+    || url.pathname === "/mcp"
     || url.pathname === "/signin-with-chatgpt"
     || url.pathname === "/signout-with-chatgpt"
     || url.pathname === "/callback"
