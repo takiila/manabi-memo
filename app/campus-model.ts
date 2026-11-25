@@ -1,4 +1,4 @@
-import { normalizeStudyEvidence, type StudyEvidence } from "./learning-model";
+import { normalizeStudyEvidence, type StudyEvidence } from "./learning-model.ts";
 export type AssignmentStatus = "todo" | "doing" | "done";
 export type AttendanceStatus = "present" | "late" | "absent";
 export type StudySupportMode = "off" | "lastMinute" | "standard" | "steady";
