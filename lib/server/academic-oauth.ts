@@ -90,5 +90,5 @@ export async function verifyAcademicOAuth(request:Request,config:OAuthConfig,wri
   const row=await queryOne<TokenRow>(TOKEN_SELECT,[hashToken(raw)]),now=Date.now();
   if(!row||row.kind!=='access'||row.used_at!==null||row.token_expires_at<=now||!validLink(row,config,now)||(write&&!row.scope.split(' ').includes(WRITE_SCOPE)))return null;
   const identity=await queryOne<{account_id:string}>('SELECT account_id FROM auth_identities WHERE issuer = ? AND subject = ? AND account_id = ?',[row.identity_issuer,row.identity_subject,row.user_id]);
-  return identity?{accountId:row.user_id,scope:row.scope,linkId:row.id}:null;
+  return identity?{accountId:row.user_id,scope:row.scope,linkId:row.id,tokenHash:row.token_hash}:null;
 }

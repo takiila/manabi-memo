@@ -18,6 +18,14 @@ export function academicSnapshot(state:unknown) {
   const courses=activeCourses(state);
   const ids=new Set(courses.map(row=>row.id));
   const scoped=(value:unknown)=>rows(value).filter(row=>ids.has(row.courseId));
+  const inbox=record(state.inbox)?rows(state.inbox.records):[];
+  const university=inbox.flatMap(row=>{
+    const item=record(row.item)?row.item:null;
+    if(!item||!['event','assignment','deadline','exam','registration','announcement'].includes(String(item.type)))return [];
+    const data=record(item.data)?item.data:{};
+    const extensions=record(item.extensions)?item.extensions:{};
+    return [{...fields(item,['id','title','type','term']),source:record(item.source)?fields(item.source,['title','kind']):{},dates:fields(data,['starts_at','ends_at','due_at','opens_at','closes_at','published_at','course_code']),calendarRule:fields(extensions,['x-class-calendar','x-class-weekday']),needsReview:item.needs_review===true,updatedAt:typeof row.updatedAt==='string'?row.updatedAt:null}];
+  });
   return {
     universityCoverage:'unverified',
     activeTerm:typeof state.activeTerm==='string'?state.activeTerm:null,
@@ -25,6 +33,7 @@ export function academicSnapshot(state:unknown) {
     assignments:scoped(state.campus.assignments).map(row=>fields(row,['id','courseId','title','dueISO','status','importance','estimatedMinutes'])),
     exams:scoped(state.campus.exams).map(row=>fields(row,['id','courseId','title','datetime','examType','location'])),
     attendance:scoped(state.campus.attendanceRecords).map(row=>fields(row,['id','courseId','dateISO','period','status'])),
+    university,
     classDates:rows(state.sessions).filter(row=>ids.has(row.courseId)&&!row.deletedAt&&typeof row.scheduledOn==='string'&&row.scheduledOn).map(row=>fields(row,['courseId','id','scheduledOn','sessionNumber'])),
     learning:normalizeStudyEvidence(state.campus.studyEvidence).filter(row=>ids.has(row.courseId)).map(row=>fields(row,['id','courseId','topic','day','outcome','minutes'])),
   };

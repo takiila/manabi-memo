@@ -308,3 +308,19 @@ test('ChatGPT連携のOAuthは固定HTTPS先・PKCE・resource・scopeを要求�
  assert.equal(tokenClientAllowed(new URLSearchParams({client_id:'test-client'}),'',cfg),true);
  assert.equal(tokenClientAllowed(new URLSearchParams({client_id:'wrong'}),'',cfg),false);
 });
+
+test('MCPツールは未確認の書き込みと未知の操作を拒否する',async()=>{
+ const {toolCommand,validModernHeaders,compactSummary,academicTools}=await import('../app/academic-mcp-model.ts');
+ assert.equal(academicTools.length,6);
+ const args={expectedRevision:2,courseId:'c',confirmed:true,day:'2026-10-09',status:'present',expectedStatus:null};
+ assert.equal(toolCommand('record_attendance',args).input.command.kind,'attendance');
+ assert.throws(()=>toolCommand('record_attendance',{...args,confirmed:false}));
+ assert.throws(()=>toolCommand('record_attendance',{...args,user_id:'other'}));
+ assert.throws(()=>toolCommand('delete_all',{}));
+ const body={method:'tools/call',params:{name:'record_attendance',_meta:{'io.modelcontextprotocol/protocolVersion':'2026-07-28'}}};
+ const headers=new Headers({'MCP-Protocol-Version':'2026-07-28','Mcp-Method':'tools/call','Mcp-Name':'record_attendance'});
+ assert.equal(validModernHeaders(body,headers),true);headers.set('Mcp-Name','other');assert.equal(validModernHeaders(body,headers),false);
+ const summary=compactSummary({ok:true,data:{activeTerm:'T',courses:[{id:'a',term:'T'},{id:'b',term:'old'}],assignments:[{courseId:'b',title:'old'},{courseId:'a',title:'new'}]}});
+ assert.equal(summary.data.courses.length,1);
+ assert.equal(summary.data.assignments[0].title,'new');
+});

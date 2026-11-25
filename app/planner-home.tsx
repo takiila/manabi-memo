@@ -86,6 +86,7 @@ export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAd
     </section>
     {academic && <section className="planner-home-card" aria-label="学業の優先事項">
       <div className="planner-heading"><div><small>登録済みの課題・試験・大学情報</small><h2>今、優先すること</h2></div>
+        <a href="/connect/manabi">ChatGPT連携の管理</a>
         {onBuildBrief && <button type="button" onClick={() => { setBriefOpen(true); setBriefMessage(''); }}>ChatGPTへの相談文を作る</button>}
       </div>
       {brief && <div className="todo-detail">

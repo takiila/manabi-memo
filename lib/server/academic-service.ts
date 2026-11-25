@@ -18,7 +18,7 @@ export async function readAcademicAccount(accountId:string){
     return json({ok:true,revision:row!.revision,syncedAt:new Date(row!.updated_at).toISOString(),coverage:'synced-snapshot-only',data:academicSnapshot(state)});
   }catch{return json({error:'同期済みの学業情報を取得できません。'},409);}
 }
-export async function writeAcademicAccount(accountId:string,input:unknown){
+export async function writeAcademicAccount(accountId:string,input:unknown,authorization?:{linkId:string;tokenHash:string}){
   try{
     const body=input&&typeof input==='object'&&!Array.isArray(input)?input as {expectedRevision?:unknown;command?:unknown}:null;
     if(!body||typeof body.expectedRevision!=='number'||!Number.isSafeInteger(body.expectedRevision)||body.expectedRevision<1)return json({error:'同期版を指定してください。'},400);
@@ -37,7 +37,9 @@ export async function writeAcademicAccount(accountId:string,input:unknown){
       if(next===state)return json({ok:true,changed:false,revision:row!.revision});
       const payload=JSON.stringify(next);
       if(new TextEncoder().encode(payload).length>4500000)return json({error:'同期容量を超えています。'},413);
-      const updated=await tx.execute("UPDATE synced_app_state SET payload = ?, revision = ?, schema_version = ?, updated_at = ?, updated_by = 'academic-api' WHERE user_id = ? AND revision = ? AND deleted_at IS NULL AND sync_complete = 1",[payload,row!.revision+1,16,now.getTime(),accountId,row!.revision]);
+      const guard=authorization?" AND EXISTS (SELECT 1 FROM academic_oauth_links l JOIN academic_oauth_tokens t ON t.link_id=l.id JOIN auth_identities i ON i.issuer=l.identity_issuer AND i.subject=l.identity_subject AND i.account_id=l.user_id WHERE l.id=? AND l.user_id=? AND l.revoked_at IS NULL AND l.expires_at>? AND t.token_hash=? AND t.kind='access' AND t.used_at IS NULL AND t.expires_at>? AND l.scope='manabi.read manabi.write')":"";
+      const guardArgs=authorization?[authorization.linkId,accountId,now.getTime(),authorization.tokenHash,now.getTime()]:[];
+      const updated=await tx.execute("UPDATE synced_app_state SET payload = ?, revision = ?, schema_version = ?, updated_at = ?, updated_by = 'academic-api' WHERE user_id = ? AND revision = ? AND deleted_at IS NULL AND sync_complete = 1"+guard,[payload,row!.revision+1,16,now.getTime(),accountId,row!.revision,...guardArgs]);
       if(updated.changes!==1)return json({error:'同期版が変わりました。'},409);
       return json({ok:true,changed:true,revision:row!.revision+1});
     });
