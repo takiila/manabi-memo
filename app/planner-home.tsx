@@ -4,12 +4,12 @@ import { PlannerQuickEntry } from './planner-quick-entry';
 import type { AttendanceStatus } from './campus-model';
 import {
   addDateDays, homeTodos, localPlannerDay, displayDay, localPlannerDateTime, normalizeHomeLayout,
-  type HomeLayout, type PersonalEvent, type PersonalTodo, type TodoRow, type HomeAttendanceRow,
+  type HomeLayout, type PersonalEvent, type PersonalTodo, type TodoRow, type HomeAttendanceRow, type AcademicPriority,
 } from './planner-model';
 
 const KEY = 'manabi-home-layout-v1';
 
-export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAddEvent, onAddTodo, attendance, onReviewSources, children }: {
+export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAddEvent, onAddTodo, attendance, onReviewSources, academic, children }: {
   rows: TodoRow[];
   events: PersonalEvent[];
   disabled: boolean;
@@ -17,7 +17,8 @@ export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAd
   onOpenEvents: () => void;
   onAddEvent: (event: PersonalEvent) => void;
   onAddTodo: (todo: PersonalTodo) => void;
-  attendance?: { rows: HomeAttendanceRow[]; onRecord: (row: HomeAttendanceRow, status: AttendanceStatus) => void; onOpen: () => void };
+  academic?: { items: AcademicPriority[]; onOpen: (item: AcademicPriority) => void };
+  attendance?: { rows: HomeAttendanceRow[]; pending?: HomeAttendanceRow[]; onRecord: (row: HomeAttendanceRow, status: AttendanceStatus) => void; onOpen: () => void };
   onReviewSources?: () => void;
   children: ReactNode;
 }) {
@@ -77,6 +78,22 @@ export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAd
       <p>表示は登録済みの情報に基づきます。LMSの新着課題・締切変更・個別の休講や補講を自動確認していません。</p>
       <p>予定が0件でも、授業や提出物がないとは限りません。</p>
     </section>
+    {academic && <section className="planner-home-card" aria-label="学業の優先事項">
+      <div className="planner-heading"><div><small>登録済みの課題・試験・大学情報</small><h2>今、優先すること</h2></div></div>
+      {!academic.items.length && <p>該当する登録済み情報はありません。未取得の課題・試験は含まれません。</p>}
+      {(['urgent', 'overdue', 'upcoming', 'review'] as const).map(group => {
+        const items = academic.items.filter(item => item.group === group);
+        if (!items.length) return null;
+        const label = { urgent: '今日・明日', overdue: '期限経過・対応確認', upcoming: '近日の課題・試験準備', review: '期限・日程未確認' }[group];
+        return <section key={group}><h3>{label}（{items.length}件）</h3>
+          {items.slice(0, 4).map(item => <button type="button" key={item.id} className="home-todo-row" onClick={() => academic.onOpen(item)}>
+            <span><strong>{item.title}</strong><small>{item.courseTitle} · {item.reason}</small></span>
+            <small>{item.at ? localPlannerDateTime(item.at).replace('T', ' ') : '日時未設定'}</small>
+          </button>)}
+          {items.length > 4 && <p>ほか{items.length - 4}件。全体ToDo・大学情報Inbox・試験管理で確認してください。</p>}
+        </section>;
+      })}
+    </section>}
     {attendance && <section className="planner-home-card">
       <div className="planner-heading">
         <div><small>{today} · 未確認は欠席に含めません</small><h2>今日の出席</h2></div>
@@ -90,6 +107,16 @@ export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAd
         </div>
       </article>)}
       <p>時間割・学年暦・登録済み授業日をもとに表示しています。個別の休講・補講は確認してください。</p>
+      {!!attendance.pending?.length && <details>
+        <summary>過去7日間の未確認出席（{attendance.pending.length}件）</summary>
+        <p>実際に授業があったことと出席状況を確認してから記録してください。未確認を欠席にはしません。</p>
+        {attendance.pending.map(row => <article key={row.courseId + ':' + row.day} className="today-course">
+          <div><strong>{row.title}</strong><small> · {row.day} · {row.conflict ? '重複記録・要確認' : '未確認'}</small></div>
+          <div className="attendance-buttons" aria-label={row.day + ' ' + row.title + 'の出席'}>
+            {(['present', 'late', 'absent'] as const).map(status => <button key={status} type="button" disabled={disabled || row.conflict} onClick={() => attendance.onRecord(row, status)}>{status === 'present' ? '出席' : status === 'late' ? '遅刻' : '欠席'}</button>)}
+          </div>
+        </article>)}
+      </details>}
     </section>}
     <PlannerQuickEntry disabled={disabled} onAddEvent={onAddEvent} onAddTodo={onAddTodo}/>
     <details className="home-customize">

@@ -202,3 +202,74 @@ export function recordHomeAttendance(state: CampusState, row: HomeAttendanceRow,
   const record = { id, courseId: row.courseId, dateISO: row.day, period: existing?.period ?? row.period, status, createdAt: existing?.createdAt ?? recordedAt };
   return { ...state, attendanceRecords: existing ? state.attendanceRecords.map(item => item.id === existing.id ? record : item) : [...state.attendanceRecords, record] };
 }
+
+// A short catch-up window is for review only: an unrecorded class is not an absence.
+export function catchUpAttendanceRows(state: PlannerInput, today: string, term: string): HomeAttendanceRow[] {
+  if (today.length !== 10 || !isPlannerDate(today, false)) return [];
+  return Array.from({ length: 7 }, (_, index) => addDateDays(today, -1 - index))
+    .flatMap(day => homeAttendanceRows(state, day, term))
+    .filter(row => row.status === null);
+}
+
+export type AcademicPriority = {
+  id: string; title: string; courseTitle: string; at: string;
+  group: 'urgent' | 'overdue' | 'upcoming' | 'review';
+  source: 'task' | 'exam' | 'inbox';
+  reason: string;
+  courseId?: string;
+};
+export function academicPriorities(state: PlannerInput, term: string, now = new Date()): AcademicPriority[] {
+  const today = localPlannerDay(now);
+  const tomorrow = addDateDays(today, 1);
+  const week = addDateDays(today, 6);
+  const examWindow = addDateDays(today, 14);
+  const result: AcademicPriority[] = [];
+  const matchingTerm = (value?: string | null) => term === 'all' || !value || value === term;
+  function deadline(at: string): 'urgent' | 'overdue' | 'upcoming' | 'review' | null {
+    if (!isPlannerDate(at, false)) return 'review';
+    const day = displayDay(at);
+    if (day < today || (at.length > 10 && Date.parse(at) < now.getTime())) return 'overdue';
+    if (day <= tomorrow) return 'urgent';
+    return day <= week ? 'upcoming' : null;
+  }
+  function deadlineReason(group: AcademicPriority['group'], at: string) {
+    if (group === 'overdue') return '期限経過・提出状態と遅延提出の可否を確認';
+    if (group === 'review') return '期限未確認・原資料を確認';
+    return (group === 'urgent' ? '今日・明日の締切' : '直近の締切') + (at.length === 10 ? '（時刻未設定）' : '');
+  }
+  for (const row of projectTodos(state)) {
+    if (row.done || !matchingTerm(row.term) || !['assignment', 'study'].includes(row.source)) continue;
+    const group = deadline(row.due);
+    if (group) result.push({ id: row.id, title: row.title, courseTitle: row.courseTitle, at: row.due, group,
+      source: 'task', reason: row.source === 'study' ? (group === 'overdue' ? '学習計画の予定日経過・再計画' : '学習計画・' + deadlineReason(group, row.due)) : deadlineReason(group, row.due), courseId: row.courseId });
+  }
+  for (const exam of state.campus.exams) {
+    const course = state.courses.find(c => c.id === exam.courseId && !c.deletedAt && !c.archivedAt);
+    if (!course || !matchingTerm(course.term)) continue;
+    const valid = isPlannerDate(exam.datetime, false);
+    if (valid && (displayDay(exam.datetime) < today || displayDay(exam.datetime) > examWindow)) continue;
+    result.push({ id: 'exam:' + exam.id, title: exam.title, courseTitle: course.title, at: exam.datetime,
+      group: !valid ? 'review' : displayDay(exam.datetime) <= tomorrow ? 'urgent' : 'upcoming', source: 'exam',
+      reason: !valid ? '試験日未確認' : '試験準備・範囲と理解度を確認' + (exam.datetime.length === 10 ? '（時刻未設定）' : ''), courseId: course.id });
+  }
+  for (const record of state.inbox.records) {
+    const item = record.item;
+    if (!matchingTerm(item.term)) continue;
+    if (item.type !== 'assignment' && item.type !== 'deadline' && item.type !== 'exam') continue;
+    const at = (item.type === 'exam' ? item.data.starts_at : item.data.due_at) ?? '';
+    let group: AcademicPriority['group'] | null = deadline(at);
+    if (item.type === 'exam') {
+      const valid = isPlannerDate(at, false);
+      group = !valid ? 'review' : displayDay(at) < today ? null : displayDay(at) <= tomorrow ? 'urgent' : displayDay(at) <= examWindow ? 'upcoming' : null;
+    }
+    if (!group) continue;
+    result.push({ id: 'inbox:' + record.id, title: item.title, courseTitle: item.source.title, at, group,
+      source: 'inbox', reason: (item.type === 'exam' ? '試験情報・原資料を照合' : deadlineReason(group, at)) + '／履修・提出状態の紐付け未確認' });
+  }
+  const order = { urgent: 0, overdue: 1, upcoming: 2, review: 3 };
+  return result.sort((a, b) => order[a.group] - order[b.group] ||
+    // Protect actual submission deadlines and exams ahead of generated study reminders.
+    Number(a.id.startsWith('study:')) - Number(b.id.startsWith('study:')) ||
+    (a.at ? localPlannerDateTime(a.at) : '9999').localeCompare(b.at ? localPlannerDateTime(b.at) : '9999') ||
+    a.id.localeCompare(b.id));
+}

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { register } from 'node:module';
 register('./tsx-loader.mjs', import.meta.url);
-import { normalizeChecklist, normalizePlanner, projectTodos, homeTodos, calendarEntries, patchChecklist, mergePlanner, normalizeHomeLayout, normalizeSessionDay, memoContentText, homeAttendanceRows, recordHomeAttendance } from '../app/planner-model.ts';
+import { normalizeChecklist, normalizePlanner, projectTodos, homeTodos, calendarEntries, patchChecklist, mergePlanner, normalizeHomeLayout, normalizeSessionDay, memoContentText, homeAttendanceRows, recordHomeAttendance, catchUpAttendanceRows, academicPriorities } from '../app/planner-model.ts';
 import { EMPTY_CAMPUS_STATE } from '../app/campus-model.ts';
 
 const item = { id: 'check1', text: '証明を復習', done: false, registered: true, due: '2026-10-09', priority: false, workAt: '', deletedAt: null };
@@ -208,4 +208,28 @@ test('学年暦の休講・曜日振替を今日の出席に反映する', () =>
   const input = { ...state, inbox: { records: rules } };
   assert.equal(homeAttendanceRows(input, '2026-10-09', course.term).length, 0);
   assert.equal(homeAttendanceRows(input, '2026-10-15', course.term)[0].courseId, course.id);
+});
+
+
+test('数日使わなくても未確認出席を提示し、欠席を自動作成しない', () => {
+  const day = '2026-10-15';
+  const rows = catchUpAttendanceRows(state, day, course.term);
+  assert.deepEqual(rows.map(row => row.day), ['2026-10-09']);
+  assert.equal(state.campus.attendanceRecords.length, 0);
+  const saved = recordHomeAttendance(state.campus, rows[0], 'present', '2026-10-15T01:00:00Z');
+  assert.equal(catchUpAttendanceRows({ ...state, campus: saved }, day, course.term).length, 0);
+});
+test('優先事項は直近提出物・試験を表示し、過去の期限や未照合のInboxを区別する', () => {
+  const assignment = (id, dueISO, status = 'todo') => ({ id, courseId: 'c', termId: course.term, title: id, dueISO, status, importance: 2 });
+  const campus = { ...state.campus, assignments: [assignment('old', '2026-10-08'), assignment('report', '2026-10-10'), assignment('done', '2026-10-09', 'done'), assignment('unknown', '')],
+    exams: [{ id: 'e', title: '試験', courseId: 'c', datetime: '2026-10-20' }] };
+  const inbox = { records: [{ id: 'ics', item: { type: 'assignment', title: '未照合課題', source: { title: 'LMS' }, data: { due_at: '2026-10-09' } } }] };
+  const result = academicPriorities({ ...state, campus, inbox }, course.term, new Date(2026, 9, 9, 9));
+  assert.equal(result[0].source, 'inbox');
+  assert.equal(result.find(item => item.id === 'assignment:report').group, 'urgent');
+  assert.equal(result.find(item => item.id === 'assignment:old').group, 'overdue');
+  assert.equal(result.find(item => item.id === 'exam:e').group, 'upcoming');
+  assert.equal(result.find(item => item.id === 'assignment:unknown').group, 'review');
+  assert.ok(result.find(item => item.id === 'inbox:ics').reason.includes('紐付け未確認'));
+  assert.ok(!result.some(item => item.id === 'assignment:done'));
 });

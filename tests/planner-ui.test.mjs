@@ -232,3 +232,23 @@ test('ホームは登録が0件でも休講・課題なしと断定せず、情�
     assert.equal(opened, 1);
   } finally { view.close(); }
 });
+
+
+test('優先事項と過去の未確認出席は元の操作へつながる', () => {
+  let opened; let recorded;
+  const row = { courseId: 'c', title: '講義', day: '2026-10-09', period: 2, status: null, conflict: false };
+  const item = { id: 'assignment:a', title: '重要レポート', courseTitle: '講義', at: '2026-10-10', group: 'urgent', source: 'task', reason: '今日・明日の締切' };
+  const view = mount(h(PlannerHome, { rows: [], events: [], disabled: false, onOpen: noop, onOpenEvents: noop, onAddEvent: noop, onAddTodo: noop,
+    academic: { items: [item], onOpen: value => opened = value },
+    attendance: { rows: [], pending: [row], onRecord: (...args) => recorded = args, onOpen: noop } }, h('div', null, '時間割')));
+  try {
+    assert.match(view.host.textContent, /今、優先すること/);
+    const task = [...view.host.querySelectorAll('button')].find(el => el.textContent.includes('重要レポート'));
+    click(task);
+    assert.equal(opened.id, item.id);
+    const previous = [...view.host.querySelectorAll('details')].find(el => el.textContent.includes('過去7日間の未確認出席'));
+    previous.open = true;
+    click(button(previous, '出席'));
+    assert.deepEqual(recorded, [row, 'present']);
+  } finally { view.close(); }
+});

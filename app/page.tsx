@@ -8,7 +8,7 @@ import { MemoChecklist } from "./memo-checklist";
 import { SessionStartDialog } from "./session-start-dialog";
 import { normalizeSessionNumber, isValidSessionNumber } from "./session-number-model";
 import { CourseMemoPanel } from "./course-memo-panel";
-import { EMPTY_PLANNER, memoContentText, normalizeSessionDay, normalizePlanner, normalizeChecklist, patchChecklist, projectTodos, homeAttendanceRows, recordHomeAttendance, localPlannerDay, type PlannerState, type ChecklistItem, type TodoRow } from "./planner-model";
+import { EMPTY_PLANNER, memoContentText, normalizeSessionDay, normalizePlanner, normalizeChecklist, patchChecklist, projectTodos, homeAttendanceRows, recordHomeAttendance, localPlannerDay, catchUpAttendanceRows, academicPriorities, addDateDays, type PlannerState, type ChecklistItem, type TodoRow } from "./planner-model";
 import { CourseTransferPanel } from "./course-transfer-panel";
 import { UniversityInbox } from "./university-inbox";
 import { TimetableCatalogDialog } from "./timetable-catalog-dialog";
@@ -1662,11 +1662,19 @@ export default function HomePage() {
           {view === "start" && (
             <PlannerHome rows={todoRows} events={planner.events} disabled={plannerDisabled}
               onReviewSources={() => setView("inbox")}
+              academic={hydrated ? { items: academicPriorities(plannerInput, activeTerm), onOpen: item => {
+                if (item.source === "inbox") setView("inbox");
+                else if (item.source === "exam" && campusAccessEnabled) setView("campus");
+                else if (item.source === "exam" && item.courseId) openCourseFromTimetable(item.courseId);
+                else { setPlannerStartTab("todo"); setView("planner"); }
+              } } : undefined}
               attendance={campusAccessEnabled && hydrated ? {
                 rows: homeAttendanceRows(plannerInput, localPlannerDay(), activeTerm),
+                pending: catchUpAttendanceRows(plannerInput, localPlannerDay(), activeTerm),
                 onOpen: () => setView("campus"),
                 onRecord: (row, status) => {
-                  if (plannerDisabled || row.day !== localPlannerDay()) return;
+                  const today = localPlannerDay();
+                  if (plannerDisabled || row.day > today || row.day < addDateDays(today, -7)) return;
                   setCampus(current => {
                     const latest = homeAttendanceRows({ ...plannerInput, campus: current }, row.day, activeTerm).find(item => item.courseId === row.courseId);
                     return latest ? recordHomeAttendance(current, latest, status, new Date().toISOString()) : current;
