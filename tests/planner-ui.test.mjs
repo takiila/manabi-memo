@@ -13,6 +13,7 @@ const { createRoot } = await import('react-dom/client');
 const { CourseMemoPanel } = await import('../app/course-memo-panel.tsx');
 const { SessionStartDialog } = await import('../app/session-start-dialog.tsx');
 const { PlannerPanel } = await import('../app/planner-panel.tsx');
+const { PlannerHome } = await import('../app/planner-home.tsx');
 const { PlannerCalendar } = await import('../app/planner-calendar.tsx');
 const { TaskDates } = await import('../app/memo-checklist.tsx');
 const { UniversityInbox } = await import('../app/university-inbox.tsx');
@@ -212,5 +213,22 @@ test('ホームのクイック登録から予定と資格勉強のToDoをそれ�
     assert.equal(recorded[1].todo.workAt, '2026-10-16');
     assert.equal(recorded[1].todo.due, '2026-10-20');
     assert.deepEqual(recorded[1].todo.tags, ['資格勉強']);
+  } finally { view.close(); }
+});
+
+
+test('ホームは登録が0件でも休講・課題なしと断定せず、情報確認へ移動できる', () => {
+  let opened = 0;
+  const view = mount(h(PlannerHome, {
+    rows: [], events: [], disabled: false, onOpen: noop, onOpenEvents: noop,
+    onAddEvent: noop, onAddTodo: noop, onReviewSources: () => opened++,
+    attendance: { rows: [], onRecord: noop, onOpen: noop }
+  }, h('div', null, '時間割')));
+  try {
+    assert.match(view.host.textContent, /大学側の最新情報：未照合/);
+    assert.match(view.host.textContent, /登録済みの今日の授業は0件です。休講・授業なしとは確定できません/);
+    assert.match(view.host.textContent, /登録済みの直近の未完了ToDoは0件です/);
+    click(button(view.host, '大学情報Inboxを開く'));
+    assert.equal(opened, 1);
   } finally { view.close(); }
 });

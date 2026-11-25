@@ -1661,6 +1661,7 @@ export default function HomePage() {
           {view === "planner" && <PlannerPanel key={plannerStartTab} initialTab={plannerStartTab} onSession={id => { const session = activeSessions.find(s => s.id === id); if (session) void openSession(session); }} state={plannerInput} disabled={plannerDisabled} onPatch={patchTodo} onPlanner={setPlanner} onMemo={id => { const memo = activeMemos.find(m => m.id === id); if (memo) openMemoOrigin(memo); }} onCourse={openCourseFromTimetable} />}
           {view === "start" && (
             <PlannerHome rows={todoRows} events={planner.events} disabled={plannerDisabled}
+              onReviewSources={() => setView("inbox")}
               attendance={campusAccessEnabled && hydrated ? {
                 rows: homeAttendanceRows(plannerInput, localPlannerDay(), activeTerm),
                 onOpen: () => setView("campus"),

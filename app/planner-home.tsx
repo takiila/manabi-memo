@@ -9,7 +9,7 @@ import {
 
 const KEY = 'manabi-home-layout-v1';
 
-export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAddEvent, onAddTodo, attendance, children }: {
+export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAddEvent, onAddTodo, attendance, onReviewSources, children }: {
   rows: TodoRow[];
   events: PersonalEvent[];
   disabled: boolean;
@@ -18,6 +18,7 @@ export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAd
   onAddEvent: (event: PersonalEvent) => void;
   onAddTodo: (todo: PersonalTodo) => void;
   attendance?: { rows: HomeAttendanceRow[]; onRecord: (row: HomeAttendanceRow, status: AttendanceStatus) => void; onOpen: () => void };
+  onReviewSources?: () => void;
   children: ReactNode;
 }) {
   const [layout, setLayout] = useState<HomeLayout>(() => {
@@ -59,7 +60,7 @@ export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAd
       <div><small>今日・直近7日・優先表示</small><h2>今日やること</h2></div>
       <button type="button" onClick={onOpen}>すべてのToDo（{rows.filter(row => !row.done).length}）</button>
     </div>
-    {!upcomingTodos.length && <p>直近の未完了ToDoはありません。</p>}
+    {!upcomingTodos.length && <p>登録済みの直近の未完了ToDoは0件です。未取得の課題や締切変更は含まれません。</p>}
     {upcomingTodos.slice(0, 5).map(row => <button type="button" key={row.id} className="home-todo-row" onClick={onOpen}>
       <span><strong>{row.title}</strong><small>{row.courseTitle}</small></span>
       <small>{row.due ? `${localPlannerDateTime(row.due).replace('T', ' ')}${displayDay(row.due) < today ? ' · 期限切れ' : ''}` : '期限なし · 優先表示'}</small>
@@ -68,12 +69,20 @@ export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAd
   </section>;
 
   return <div className="planner-home">
+    <section className="planner-home-card" aria-label="大学情報の確認状況">
+      <div className="planner-heading">
+        <div><small>情報の確認状況</small><h2>大学側の最新情報：未照合</h2></div>
+        {onReviewSources && <button type="button" onClick={onReviewSources}>大学情報Inboxを開く</button>}
+      </div>
+      <p>表示は登録済みの情報に基づきます。LMSの新着課題・締切変更・個別の休講や補講を自動確認していません。</p>
+      <p>予定が0件でも、授業や提出物がないとは限りません。</p>
+    </section>
     {attendance && <section className="planner-home-card">
       <div className="planner-heading">
         <div><small>{today} · 未確認は欠席に含めません</small><h2>今日の出席</h2></div>
         <button type="button" onClick={attendance.onOpen}>出席・大学生活管理</button>
       </div>
-      {!attendance.rows.length && <p>時間割・登録済み授業日から確認できる今日の授業はありません。</p>}
+      {!attendance.rows.length && <p>登録済みの今日の授業は0件です。休講・授業なしとは確定できません。</p>}
       {attendance.rows.map(row => <article key={row.courseId} className="today-course">
         <div><strong>{row.title}</strong><small> · {row.period ? `${row.period}限` : '時限未確認'} · {row.conflict ? '重複記録・要確認' : row.status === 'present' ? '出席' : row.status === 'late' ? '遅刻' : row.status === 'absent' ? '欠席' : '未確認'}</small></div>
         <div className="attendance-buttons" aria-label={`${row.title}の出席`}>
