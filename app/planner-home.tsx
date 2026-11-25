@@ -1,6 +1,7 @@
 'use client';
 import { useState, type ReactNode } from 'react';
 import { PlannerQuickEntry } from './planner-quick-entry';
+import { AcademicAlerts } from './academic-alerts';
 import type { AttendanceStatus } from './campus-model';
 import {
   addDateDays, homeTodos, localPlannerDay, displayDay, localPlannerDateTime, normalizeHomeLayout,
@@ -97,6 +98,7 @@ export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAd
         <button type="button" onClick={() => { setBriefOpen(false); setBriefMessage(''); }}>閉じる</button>
         {briefMessage && <p role="status">{briefMessage}</p>}
       </div>}
+      <AcademicAlerts items={academic.items} disabled={disabled}/>
       {!academic.items.length && <p>該当する登録済み情報はありません。未取得の課題・試験は含まれません。</p>}
       {(['urgent', 'overdue', 'upcoming', 'review'] as const).map(group => {
         const items = academic.items.filter(item => item.group === group);

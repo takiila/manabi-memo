@@ -249,3 +249,21 @@ test('不正な日時は画面表示へ渡さず確認候補にする', () => {
   assert.equal(item.group, 'review');
   assert.equal(item.at, '');
 });
+
+
+test('学業APIは明示確認・科目ID・現状照合を要求し、対象外の情報を保持する',async()=>{
+ const {academicSnapshot,applyAcademicCommand}=await import('../app/academic-api-model.ts');
+ const input={...state,campus:{...state.campus,assignments:[{id:'a',courseId:'c',title:'課題',status:'todo',dueISO:'2026-10-09',note:'private-note'}]},sessions:[{id:'s',noteText:'private-body'}]};
+ const snapshot=academicSnapshot(input);
+ assert.equal(snapshot.assignments[0].id,'a');
+ assert.doesNotMatch(JSON.stringify(snapshot),/private-note|private-body/);
+ const command={kind:'assignment_submitted',courseId:'c',assignmentId:'a',expectedStatus:'todo',confirmed:true};
+ assert.throws(()=>applyAcademicCommand(input,{...command,confirmed:false},'2026-10-09','2026-10-09T00:00:00Z'));
+ assert.throws(()=>applyAcademicCommand(input,{...command,courseId:'other'},'2026-10-09','2026-10-09T00:00:00Z'));
+ const next=applyAcademicCommand(input,command,'2026-10-09','2026-10-09T00:00:00Z');
+ assert.equal(next.campus.assignments[0].status,'done');
+ assert.equal(next.campus.assignments[0].note,'private-note');
+ assert.equal(next.sessions,input.sessions);
+ assert.equal(applyAcademicCommand(next,command,'2026-10-09','2026-10-09T00:00:00Z'),next);
+ assert.equal(input.campus.assignments[0].status,'todo');
+});
