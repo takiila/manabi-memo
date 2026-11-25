@@ -2,6 +2,12 @@ import { MAX_IMPORT_BYTES, parseManabiImport } from './manabi-import-model.ts';
 import type { ImportItem, ManabiImport } from './manabi-import-types';
 
 export const ICAL_COLLECTION = 'ical-calendar';
+
+export class EmptyICalendarError extends Error {
+  constructor() {
+    super('このファイルの予定は0件です。大学側の課題や授業の有無は未確認です。');
+  }
+}
 type Property = { name: string; params: string; value: string };
 const unsupported = new Set(['RRULE', 'RDATE', 'EXDATE', 'EXRULE', 'RECURRENCE-ID', 'DURATION']);
 
@@ -54,7 +60,8 @@ export async function parseICalendar(raw: string): Promise<ManabiImport> {
     if (unsupported.has(property.name) || (property.name === 'STATUS' && property.value !== 'CONFIRMED')) throw new Error('繰り返し・例外・未確定・取り消し予定にはまだ対応していません。元の予定は変更していません。');
     event.push(property);
   }
-  if (event || !events.length || events.length > 200 || !lines.includes('VERSION:2.0')) throw new Error('ICSはVERSION 2.0、完結した予定1〜200件で指定してください。');
+  if (event || events.length > 200 || !lines.includes('VERSION:2.0')) throw new Error('ICSはVERSION 2.0、完結した予定200件以内で指定してください。');
+  if (!events.length) throw new EmptyICalendarError();
   const items: ImportItem[] = [];
   for (const properties of events) {
     function one(name: string, required = false) {

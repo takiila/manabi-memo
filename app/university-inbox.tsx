@@ -52,13 +52,14 @@ export function UniversityInbox({ inbox, courses, disabled, onChange, onImport }
   const filtered = inbox.records.filter(record => (!type || record.item.type === type) && (!unreadOnly || record.status === 'unread') && JSON.stringify([record.collection, record.item]).toLocaleLowerCase('ja-JP').includes(query.toLocaleLowerCase('ja-JP')));
   const schedule = filtered.flatMap(record => Object.entries(record.item.data).filter(([key, value]) => typeof value === 'string' && /^(starts_at|due_at|guidance_at|application_start|application_end|result_at|opens_at|closes_at)$/.test(key)).map(([key, value]) => ({ record, key, date: value as string }))).sort((left, right) => Date.parse(left.date) - Date.parse(right.date));
   function edit(value: string) { inputVersion.current++; setText(value); setBundle(null); setRecovery(false); setSelected([]); setReviewed([]); setMessage(''); }
+  function openPreview(parsed: ManabiImport) {
+    setBundle(parsed); setRecovery(false); setBaseline(JSON.stringify(inbox)); setCourseBaseline(JSON.stringify(courses)); setCourseTerms({}); setCourseReviewed(false);
+    setCourseSelected(planInboxCourses(courses, parsed.items.map(item => ({ collection: parsed.collection, item }))).filter(row => row.kind === 'add' || row.kind === 'blocked').map(row => row.key));
+    setSelected(planManabiImport(inbox, parsed).filter(row => row.kind === 'add').map(row => row.item.id)); setReviewed([]);
+    setMessage('新規項目を選択しています。出典と反映先を確認してください。まだ保存されていません。');
+  }
   function preview() {
-    try {
-      const parsed = parseManabiImport(text);
-      setBundle(parsed); setRecovery(false); setBaseline(JSON.stringify(inbox)); setCourseBaseline(JSON.stringify(courses)); setCourseTerms({}); setCourseReviewed(false);
-      setCourseSelected(planInboxCourses(courses, parsed.items.map(item => ({ collection: parsed.collection, item }))).filter(row => row.kind === 'add' || row.kind === 'blocked').map(row => row.key));
-      setSelected(planManabiImport(inbox, parsed).filter(row => row.kind === 'add').map(row => row.item.id)); setReviewed([]); setMessage('新規項目を選択しています。出典と反映先を確認してください。まだ保存されていません。');
-    }
+    try { openPreview(parseManabiImport(text)); }
     catch (cause) { setBundle(null); setMessage(cause instanceof Error ? cause.message : '解析できませんでした。'); }
   }
   function confirm() {
@@ -92,17 +93,19 @@ export function UniversityInbox({ inbox, courses, disabled, onChange, onImport }
         try {
           const raw = await file.text();
           const ical = /\.ics$/i.test(file.name) || file.type === 'text/calendar';
-          const value = ical ? JSON.stringify(await parseICalendar(raw), null, 2) : raw;
-          if (version !== inputVersion.current) return;
-          edit(value);
-          if (ical) setMessage('LMSカレンダーを読みました。「JSONを解析して確認」で日時・科目・分類を確認してください。まだ保存していません。');
+          if (ical) {
+            const parsed = await parseICalendar(raw);
+            if (version === inputVersion.current) openPreview(parsed);
+          } else if (version === inputVersion.current) {
+            edit(raw);
+          }
         } catch (cause) { if (version === inputVersion.current) setMessage(cause instanceof Error ? cause.message : 'ファイルを読めませんでした。'); }
       }} /></label>
       <label>JSONを貼り付け<textarea rows={10} value={text} onChange={event => edit(event.target.value)} spellCheck={false} placeholder={'{"schema_version":"1.0","collection":"大学・年度の識別子","items":[…]}'} /></label>
       <button type="button" onClick={preview} disabled={disabled || !text.trim()}>JSONを解析して確認</button>
       <p role="status" aria-live="polite">{message}</p>
       {disabled && <p role="alert">端末の読み込み・保存状態を確認するまで、取り込みと既読の変更を停止しています。</p>}
-      {stale && <p role="alert">確認後に大学情報が変わりました。もう一度「JSONを解析して確認」を押してください。</p>}
+      {stale && <p role="alert">確認後に大学情報が変わりました。ファイルを選び直すか、貼り付けたJSONを再解析してください。</p>}
       {bundle && <section aria-label="取り込みプレビュー">
         <h3>取り込みプレビュー</h3><p>情報集合: {bundle.collection}</p>
         <button type="button" disabled={disabled || stale} onClick={() => setSelected(rows.filter(row => row.kind === 'add' || row.kind === 'update').map(row => row.item.id))}>新規・更新候補をすべて選択</button>

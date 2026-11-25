@@ -47,7 +47,8 @@ test('LMSファイルを選んでも保存せず、プレビューと要確認�
   try {
     await chooseFile(view.host, { name: 'calendar.ics', size: syntheticIcs.length, type: 'text/calendar', text: async () => syntheticIcs });
     assert.equal(result, undefined);
-    click(button(view.host, 'JSONを解析して確認'));
+    assert.equal(button(view.host, 'JSONを解析して確認').disabled, true);
+    assert.ok(view.host.querySelector('[aria-label="取り込みプレビュー"]'));
     assert.match(view.host.textContent, /架空課題の提出期限/);
     const save = button(view.host, '確認した1件を取り込む');
     assert.equal(save.disabled, true);
@@ -57,6 +58,20 @@ test('LMSファイルを選んでも保存せず、プレビューと要確認�
     assert.deepEqual(result[1], []); // No inferred enrolment or shared-calendar write.
   } finally { view.close(); }
 });
+test('空のICSはファイルの範囲だけの結果として表示し、既存情報への書き込みを行わない', async () => {
+  let writes = 0;
+  const onWrite = () => writes++;
+  const view = mount(h(UniversityInbox, { inbox: { version: 1, records: [] }, courses: [], disabled: false, onChange: onWrite, onImport: onWrite }));
+  try {
+    const raw = 'BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR';
+    await chooseFile(view.host, { name: 'calendar.ics', size: raw.length, type: 'text/calendar', text: async () => raw });
+    assert.match(view.host.querySelector('.inbox-card[aria-label="AI・LMSから情報を取り込む"] [role=status]').textContent, /このファイルの予定は0件/);
+    assert.match(view.host.querySelector('.inbox-card[aria-label="AI・LMSから情報を取り込む"] [role=status]').textContent, /大学側の課題や授業の有無は未確認/);
+    assert.equal(view.host.querySelector('[aria-label="取り込みプレビュー"]'), null);
+    assert.equal(writes, 0);
+  } finally { view.close(); }
+});
+
 test('遅いファイル読み込みが、その後に選んだ入力を上書きしない', async () => {
   let finish;
   const view = mount(h(UniversityInbox, { inbox: { version: 1, records: [] }, courses: [], disabled: false, onChange: noop, onImport: noop }));
