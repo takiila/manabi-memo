@@ -1,4 +1,4 @@
-import type { CampusState } from './campus-model';
+import type { AttendanceStatus, CampusState } from './campus-model';
 import type { InformationInbox } from './manabi-import-types';
 
 export type ChecklistItem = { id: string; text: string; done: boolean; registered: boolean; due: string; priority: boolean; workAt: string; deletedAt: string | null };
@@ -171,4 +171,34 @@ export function serializeEventDates(start: string, end: string, original?: Pick<
     return zoned && draft.length > 10 ? new Date(draft).toISOString() : draft;
   };
   return { start: serialize(start, original?.start), end: serialize(end, original?.end) };
+}
+
+// The calendar determines scheduled classes; a missing record is never an absence.
+export type HomeAttendanceRow = { courseId: string; title: string; day: string; period: number | null; status: AttendanceStatus | null; conflict: boolean };
+export function homeAttendanceRows(state: PlannerInput, day: string, term: string): HomeAttendanceRow[] {
+  if (day.length !== 10 || !isPlannerDate(day, false)) return [];
+  const entries = calendarEntries(state, day.slice(0, 7), term).filter(entry =>
+    displayDay(entry.at) === day && (entry.kind === 'class' || entry.kind === 'session'));
+  const rows = new Map<string, HomeAttendanceRow>();
+  for (const entry of entries) {
+    const course = state.courses.find(c => c.id === entry.courseId && !c.deletedAt && !c.archivedAt);
+    if (!course || rows.has(course.id)) continue;
+    const records = state.campus.attendanceRecords.filter(record => record.courseId === course.id && record.dateISO === day);
+    rows.set(course.id, { courseId: course.id, title: course.title, day, period: entry.kind === 'class' ? course.period : null,
+      status: records.length === 1 ? records[0].status : null, conflict: records.length > 1 });
+  }
+  return [...rows.values()].sort((a, b) => (a.period ?? 99) - (b.period ?? 99) || a.title.localeCompare(b.title, 'ja'));
+}
+
+export function recordHomeAttendance(state: CampusState, row: HomeAttendanceRow, status: AttendanceStatus, recordedAt: string): CampusState {
+  if (row.conflict || !row.courseId || row.day.length !== 10 || !isPlannerDate(row.day, false) ||
+      !['present', 'late', 'absent'].includes(status) || !Number.isFinite(Date.parse(recordedAt))) return state;
+  const matches = state.attendanceRecords.filter(record => record.courseId === row.courseId && record.dateISO === row.day);
+  if (matches.length > 1) return state;
+  const existing = matches[0];
+  if (existing?.status === status) return state;
+  const id = existing?.id ?? `attendance-${row.courseId}-${row.day}`;
+  if (!existing && state.attendanceRecords.some(record => record.id === id)) return state;
+  const record = { id, courseId: row.courseId, dateISO: row.day, period: existing?.period ?? row.period, status, createdAt: existing?.createdAt ?? recordedAt };
+  return { ...state, attendanceRecords: existing ? state.attendanceRecords.map(item => item.id === existing.id ? record : item) : [...state.attendanceRecords, record] };
 }

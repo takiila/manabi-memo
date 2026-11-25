@@ -8,7 +8,7 @@ import { MemoChecklist } from "./memo-checklist";
 import { SessionStartDialog } from "./session-start-dialog";
 import { normalizeSessionNumber, isValidSessionNumber } from "./session-number-model";
 import { CourseMemoPanel } from "./course-memo-panel";
-import { EMPTY_PLANNER, memoContentText, normalizeSessionDay, normalizePlanner, normalizeChecklist, patchChecklist, projectTodos, type PlannerState, type ChecklistItem, type TodoRow } from "./planner-model";
+import { EMPTY_PLANNER, memoContentText, normalizeSessionDay, normalizePlanner, normalizeChecklist, patchChecklist, projectTodos, homeAttendanceRows, recordHomeAttendance, localPlannerDay, type PlannerState, type ChecklistItem, type TodoRow } from "./planner-model";
 import { CourseTransferPanel } from "./course-transfer-panel";
 import { UniversityInbox } from "./university-inbox";
 import { TimetableCatalogDialog } from "./timetable-catalog-dialog";
@@ -1661,6 +1661,17 @@ export default function HomePage() {
           {view === "planner" && <PlannerPanel key={plannerStartTab} initialTab={plannerStartTab} onSession={id => { const session = activeSessions.find(s => s.id === id); if (session) void openSession(session); }} state={plannerInput} disabled={plannerDisabled} onPatch={patchTodo} onPlanner={setPlanner} onMemo={id => { const memo = activeMemos.find(m => m.id === id); if (memo) openMemoOrigin(memo); }} onCourse={openCourseFromTimetable} />}
           {view === "start" && (
             <PlannerHome rows={todoRows} events={planner.events} disabled={plannerDisabled}
+              attendance={campusAccessEnabled && hydrated ? {
+                rows: homeAttendanceRows(plannerInput, localPlannerDay(), activeTerm),
+                onOpen: () => setView("campus"),
+                onRecord: (row, status) => {
+                  if (plannerDisabled || row.day !== localPlannerDay()) return;
+                  setCampus(current => {
+                    const latest = homeAttendanceRows({ ...plannerInput, campus: current }, row.day, activeTerm).find(item => item.courseId === row.courseId);
+                    return latest ? recordHomeAttendance(current, latest, status, new Date().toISOString()) : current;
+                  });
+                },
+              } : undefined}
               onOpen={() => { setPlannerStartTab("todo"); setView("planner"); }}
               onOpenEvents={() => { setPlannerStartTab("events"); setView("planner"); }}
               onAddTodo={todo => setPlanner(previous => ({ ...previous, todos: [...previous.todos, todo] }))}

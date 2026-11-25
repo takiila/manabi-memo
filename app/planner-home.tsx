@@ -1,14 +1,15 @@
 'use client';
 import { useState, type ReactNode } from 'react';
 import { PlannerQuickEntry } from './planner-quick-entry';
+import type { AttendanceStatus } from './campus-model';
 import {
   addDateDays, homeTodos, localPlannerDay, displayDay, localPlannerDateTime, normalizeHomeLayout,
-  type HomeLayout, type PersonalEvent, type PersonalTodo, type TodoRow,
+  type HomeLayout, type PersonalEvent, type PersonalTodo, type TodoRow, type HomeAttendanceRow,
 } from './planner-model';
 
 const KEY = 'manabi-home-layout-v1';
 
-export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAddEvent, onAddTodo, children }: {
+export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAddEvent, onAddTodo, attendance, children }: {
   rows: TodoRow[];
   events: PersonalEvent[];
   disabled: boolean;
@@ -16,6 +17,7 @@ export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAd
   onOpenEvents: () => void;
   onAddEvent: (event: PersonalEvent) => void;
   onAddTodo: (todo: PersonalTodo) => void;
+  attendance?: { rows: HomeAttendanceRow[]; onRecord: (row: HomeAttendanceRow, status: AttendanceStatus) => void; onOpen: () => void };
   children: ReactNode;
 }) {
   const [layout, setLayout] = useState<HomeLayout>(() => {
@@ -66,6 +68,20 @@ export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAd
   </section>;
 
   return <div className="planner-home">
+    {attendance && <section className="planner-home-card">
+      <div className="planner-heading">
+        <div><small>{today} · 未確認は欠席に含めません</small><h2>今日の出席</h2></div>
+        <button type="button" onClick={attendance.onOpen}>出席・大学生活管理</button>
+      </div>
+      {!attendance.rows.length && <p>時間割・登録済み授業日から確認できる今日の授業はありません。</p>}
+      {attendance.rows.map(row => <article key={row.courseId} className="today-course">
+        <div><strong>{row.title}</strong><small> · {row.period ? `${row.period}限` : '時限未確認'} · {row.conflict ? '重複記録・要確認' : row.status === 'present' ? '出席' : row.status === 'late' ? '遅刻' : row.status === 'absent' ? '欠席' : '未確認'}</small></div>
+        <div className="attendance-buttons" aria-label={`${row.title}の出席`}>
+          {(['present', 'late', 'absent'] as const).map(status => <button key={status} type="button" disabled={disabled || row.conflict} aria-pressed={row.status === status} className={row.status === status ? 'active' : ''} onClick={() => attendance.onRecord(row, status)}>{status === 'present' ? '出席' : status === 'late' ? '遅刻' : '欠席'}</button>)}
+        </div>
+      </article>)}
+      <p>時間割・学年暦・登録済み授業日をもとに表示しています。個別の休講・補講は確認してください。</p>
+    </section>}
     <PlannerQuickEntry disabled={disabled} onAddEvent={onAddEvent} onAddTodo={onAddTodo}/>
     <details className="home-customize">
       <summary>ホームをカスタマイズ</summary>

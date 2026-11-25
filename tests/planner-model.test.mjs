@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { register } from 'node:module';
 register('./tsx-loader.mjs', import.meta.url);
-import { normalizeChecklist, normalizePlanner, projectTodos, homeTodos, calendarEntries, patchChecklist, mergePlanner, normalizeHomeLayout, normalizeSessionDay, memoContentText } from '../app/planner-model.ts';
+import { normalizeChecklist, normalizePlanner, projectTodos, homeTodos, calendarEntries, patchChecklist, mergePlanner, normalizeHomeLayout, normalizeSessionDay, memoContentText, homeAttendanceRows, recordHomeAttendance } from '../app/planner-model.ts';
 import { EMPTY_CAMPUS_STATE } from '../app/campus-model.ts';
 
 const item = { id: 'check1', text: '証明を復習', done: false, registered: true, due: '2026-10-09', priority: false, workAt: '', deletedAt: null };
@@ -181,4 +181,31 @@ test('ホームのクイック登録はゼミガイダンス・通院・資格�
   assert.ok(entries.some(e => e.kind === 'work' && e.title === 'AWS SAA 勉強' && e.time === '19:00'));
   assert.ok(entries.some(e => e.kind === 'todo' && e.title === 'AWS SAA 勉強' && e.time === ''));
   assert.equal(homeTodos(projectTodos(personalState), '2026-10-15').some(t => t.title === 'AWS SAA 勉強'), true);
+});
+
+test('今日の出席は未確認と欠席を分け、既存の出席記録だけを同じIDで更新する', () => {
+  const day = '2026-10-09';
+  const [row] = homeAttendanceRows(state, day, course.term);
+  assert.equal(row.status, null);
+  assert.equal(row.period, 2);
+  assert.equal(state.campus.attendanceRecords.length, 0);
+  const saved = recordHomeAttendance(state.campus, row, 'present', '2026-10-09T02:00:00Z');
+  assert.equal(saved.attendanceRecords.length, 1);
+  assert.equal(homeAttendanceRows({ ...state, campus: saved }, day, course.term)[0].status, 'present');
+  const updated = recordHomeAttendance(saved, row, 'late', '2026-10-09T02:10:00Z');
+  assert.equal(updated.attendanceRecords.length, 1);
+  assert.equal(updated.attendanceRecords[0].id, saved.attendanceRecords[0].id);
+  assert.equal(updated.attendanceRecords[0].status, 'late');
+  assert.equal(saved.attendanceRecords[0].status, 'present');
+  const duplicate = { ...saved, attendanceRecords: [...saved.attendanceRecords, { ...saved.attendanceRecords[0], id: 'legacy-duplicate' }] };
+  assert.equal(homeAttendanceRows({ ...state, campus: duplicate }, day, course.term)[0].conflict, true);
+  assert.equal(recordHomeAttendance(duplicate, row, 'absent', '2026-10-09T03:00:00Z'), duplicate);
+  assert.equal(homeAttendanceRows(state, '2026-10-10', course.term).length, 0);
+});
+test('学年暦の休講・曜日振替を今日の出席に反映する', () => {
+  const rules = [{ id: 'off', type: 'event', term: course.term, title: '休講', source: { title: '学年暦' }, data: { starts_at: '2026-10-09' }, extensions: { 'x-class-calendar': 'no_class' } },
+    { id: 'swap', type: 'event', term: course.term, title: '金曜授業', source: { title: '学年暦' }, data: { starts_at: '2026-10-15' }, extensions: { 'x-class-weekday': 5 } }].map(item => ({ id: item.id, collection: 'calendar', item }));
+  const input = { ...state, inbox: { records: rules } };
+  assert.equal(homeAttendanceRows(input, '2026-10-09', course.term).length, 0);
+  assert.equal(homeAttendanceRows(input, '2026-10-15', course.term)[0].courseId, course.id);
 });
