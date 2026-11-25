@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { register } from 'node:module';
 register('./tsx-loader.mjs', import.meta.url);
-import { normalizeChecklist, normalizePlanner, projectTodos, homeTodos, calendarEntries, patchChecklist, mergePlanner, normalizeHomeLayout, normalizeSessionDay, memoContentText, homeAttendanceRows, recordHomeAttendance, catchUpAttendanceRows, academicPriorities } from '../app/planner-model.ts';
+import { normalizeChecklist, normalizePlanner, projectTodos, homeTodos, calendarEntries, patchChecklist, mergePlanner, normalizeHomeLayout, normalizeSessionDay, memoContentText, homeAttendanceRows, recordHomeAttendance, catchUpAttendanceRows, academicPriorities, academicBrief } from '../app/planner-model.ts';
 import { EMPTY_CAMPUS_STATE } from '../app/campus-model.ts';
 
 const item = { id: 'check1', text: '証明を復習', done: false, registered: true, due: '2026-10-09', priority: false, workAt: '', deletedAt: null };
@@ -232,4 +232,20 @@ test('優先事項は直近提出物・試験を表示し、過去の期限や�
   assert.equal(result.find(item => item.id === 'assignment:unknown').group, 'review');
   assert.ok(result.find(item => item.id === 'inbox:ics').reason.includes('紐付け未確認'));
   assert.ok(!result.some(item => item.id === 'assignment:done'));
+});
+
+
+test('相談用の文章は未照合状態と日時を伝え、ノートやPDFの本文を含めない', () => {
+  const input = { ...state, memos: [{ ...memo, text: 'private-note-body', checklist: [] }] };
+  const brief = academicBrief(input, course.term, new Date(2026, 9, 9, 9));
+  assert.match(brief, /大学側の最新情報は未照合/);
+  assert.match(brief, /2026-10-09 09:00/);
+  assert.match(brief, /数理論理学/);
+  assert.doesNotMatch(brief, /private-note-body/);
+});
+test('不正な日時は画面表示へ渡さず確認候補にする', () => {
+  const campus = { ...state.campus, assignments: [{ id: 'bad', title: '期限未確認', courseId: 'c', dueISO: 'badZ', status: 'todo' }] };
+  const item = academicPriorities({ ...state, campus }, course.term, new Date(2026, 9, 9, 9)).find(item => item.id === 'assignment:bad');
+  assert.equal(item.group, 'review');
+  assert.equal(item.at, '');
 });

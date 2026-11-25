@@ -9,7 +9,7 @@ import {
 
 const KEY = 'manabi-home-layout-v1';
 
-export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAddEvent, onAddTodo, attendance, onReviewSources, academic, children }: {
+export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAddEvent, onAddTodo, attendance, onReviewSources, academic, onBuildBrief, children }: {
   rows: TodoRow[];
   events: PersonalEvent[];
   disabled: boolean;
@@ -20,6 +20,7 @@ export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAd
   academic?: { items: AcademicPriority[]; onOpen: (item: AcademicPriority) => void };
   attendance?: { rows: HomeAttendanceRow[]; pending?: HomeAttendanceRow[]; onRecord: (row: HomeAttendanceRow, status: AttendanceStatus) => void; onOpen: () => void };
   onReviewSources?: () => void;
+  onBuildBrief?: () => string;
   children: ReactNode;
 }) {
   const [layout, setLayout] = useState<HomeLayout>(() => {
@@ -31,6 +32,8 @@ export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAd
     }
   });
   const [error, setError] = useState('');
+  const [brief, setBrief] = useState('');
+  const [briefMessage, setBriefMessage] = useState('');
   function change(next: HomeLayout) {
     setLayout(next);
     try { localStorage.setItem(KEY, JSON.stringify(next)); setError(''); }
@@ -79,7 +82,19 @@ export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAd
       <p>予定が0件でも、授業や提出物がないとは限りません。</p>
     </section>
     {academic && <section className="planner-home-card" aria-label="学業の優先事項">
-      <div className="planner-heading"><div><small>登録済みの課題・試験・大学情報</small><h2>今、優先すること</h2></div></div>
+      <div className="planner-heading"><div><small>登録済みの課題・試験・大学情報</small><h2>今、優先すること</h2></div>
+        {onBuildBrief && <button type="button" onClick={() => { setBrief(onBuildBrief()); setBriefMessage(''); }}>ChatGPTへの相談文を作る</button>}
+      </div>
+      {brief && <div className="todo-detail">
+        <p>相談文を確認してから、ご自身のChatGPTへ貼り付けてください。ノート本文・PDF・アカウント情報は含みません。</p>
+        <textarea aria-label="ChatGPTへの相談文" readOnly value={brief} rows={5}/>
+        <button type="button" onClick={async () => {
+          try { await navigator.clipboard.writeText(brief); setBriefMessage('相談文をコピーしました。'); }
+          catch { setBriefMessage('自動コピーできませんでした。上の相談文を選択してコピーしてください。'); }
+        }}>相談文をコピー</button>
+        <button type="button" onClick={() => { setBrief(''); setBriefMessage(''); }}>閉じる</button>
+        {briefMessage && <p role="status">{briefMessage}</p>}
+      </div>}
       {!academic.items.length && <p>該当する登録済み情報はありません。未取得の課題・試験は含まれません。</p>}
       {(['urgent', 'overdue', 'upcoming', 'review'] as const).map(group => {
         const items = academic.items.filter(item => item.group === group);

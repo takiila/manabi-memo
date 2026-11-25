@@ -252,3 +252,18 @@ test('優先事項と過去の未確認出席は元の操作へつながる', ()
     assert.deepEqual(recorded, [row, 'present']);
   } finally { view.close(); }
 });
+
+
+test('ChatGPT相談文は利用者の操作で生成され、閉じるまで送信しない', () => {
+  let count = 0;
+  const view = mount(h(PlannerHome, { rows: [], events: [], disabled: false, onOpen: noop, onOpenEvents: noop, onAddEvent: noop, onAddTodo: noop,
+    academic: { items: [], onOpen: noop }, onBuildBrief: () => { count++; return '今日の相談文'; } }, h('div', null, '時間割')));
+  try {
+    assert.equal(count, 0);
+    click(button(view.host, 'ChatGPTへの相談文を作る'));
+    assert.equal(count, 1);
+    assert.equal(view.host.querySelector('textarea[aria-label="ChatGPTへの相談文"]').value, '今日の相談文');
+    click(button(view.host, '閉じる'));
+    assert.equal(view.host.querySelector('textarea[aria-label="ChatGPTへの相談文"]'), null);
+  } finally { view.close(); }
+});
