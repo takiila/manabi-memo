@@ -234,6 +234,7 @@ export function mergeCampusImported(
   const examIds = reidentifyIncoming(existing.exams, incoming.exams, "exam");
   const attendanceIds = reidentifyIncoming(existing.attendanceRecords, incoming.attendanceRecords, "attendance");
   const studyTaskIds = reidentifyIncoming(existing.studyTasks, incoming.studyTasks, "study-task");
+  const evidenceIds = reidentifyIncoming(existing.studyEvidence ?? [], incoming.studyEvidence ?? [], "study-evidence");
 
   const remapCourse = <T extends { courseId: string }>(items: T[]) => items.map((item) => ({
     ...item,
@@ -303,6 +304,7 @@ export function mergeCampusImported(
     exams: [...existing.exams, ...exams],
     attendanceRecords: [...existing.attendanceRecords, ...attendanceRecords],
     studyTasks: [...existing.studyTasks, ...studyTasks],
+    ...((existing.studyEvidence || incoming.studyEvidence) ? { studyEvidence: [...(existing.studyEvidence ?? []), ...remapCourse(incoming.studyEvidence ?? []).map((item,index) => ({ ...item, id: evidenceIds.itemIds[index] ?? item.id }))] } : {}),
     gpaProfile: mergedGpaProfile,
     degreePlan: mergedDegreePlan,
   } as CampusState;

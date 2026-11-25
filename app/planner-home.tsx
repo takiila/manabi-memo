@@ -9,7 +9,7 @@ import {
 
 const KEY = 'manabi-home-layout-v1';
 
-export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAddEvent, onAddTodo, attendance, onReviewSources, academic, onBuildBrief, children }: {
+export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAddEvent, onAddTodo, attendance, onReviewSources, academic, onBuildBrief, learning, children }: {
   rows: TodoRow[];
   events: PersonalEvent[];
   disabled: boolean;
@@ -21,6 +21,7 @@ export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAd
   attendance?: { rows: HomeAttendanceRow[]; pending?: HomeAttendanceRow[]; onRecord: (row: HomeAttendanceRow, status: AttendanceStatus) => void; onOpen: () => void };
   onReviewSources?: () => void;
   onBuildBrief?: () => string;
+  learning?: ReactNode;
   children: ReactNode;
 }) {
   const [layout, setLayout] = useState<HomeLayout>(() => {
@@ -134,6 +135,7 @@ export function PlannerHome({ rows, events, disabled, onOpen, onOpenEvents, onAd
         </article>)}
       </details>}
     </section>}
+    {learning}
     <PlannerQuickEntry disabled={disabled} onAddEvent={onAddEvent} onAddTodo={onAddTodo}/>
     <details className="home-customize">
       <summary>ホームをカスタマイズ</summary>

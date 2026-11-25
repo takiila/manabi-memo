@@ -4,6 +4,8 @@ import { PlannerDialog } from './planner-dialog';
 import { TagInput } from './planner-tag-input';
 import { PlannerPanel } from "./planner-panel";
 import { PlannerHome } from "./planner-home";
+import { LearningPanel } from "./learning-panel";
+import { addEvidence } from "./learning-model";
 import { MemoChecklist } from "./memo-checklist";
 import { SessionStartDialog } from "./session-start-dialog";
 import { normalizeSessionNumber, isValidSessionNumber } from "./session-number-model";
@@ -302,7 +304,7 @@ const PREVIOUS_STATE_KEYS = [
   "manabi-memo-state-v2",
 ];
 const LEGACY_STATE_KEY = "manabi-memo-state-v1";
-const CURRENT_SCHEMA_VERSION = 15;
+const CURRENT_SCHEMA_VERSION = 16;
 const DEFAULT_TERM = defaultAcademicTerm();
 const weekdays = [
   { value: 1, short: "月", label: "月曜日" },
@@ -1661,6 +1663,9 @@ export default function HomePage() {
           {view === "planner" && <PlannerPanel key={plannerStartTab} initialTab={plannerStartTab} onSession={id => { const session = activeSessions.find(s => s.id === id); if (session) void openSession(session); }} state={plannerInput} disabled={plannerDisabled} onPatch={patchTodo} onPlanner={setPlanner} onMemo={id => { const memo = activeMemos.find(m => m.id === id); if (memo) openMemoOrigin(memo); }} onCourse={openCourseFromTimetable} />}
           {view === "start" && (
             <PlannerHome rows={todoRows} events={planner.events} disabled={plannerDisabled}
+              learning={hydrated ? <LearningPanel courses={activeCourses.filter(course => !course.archivedAt && course.term === activeTerm)}
+                records={campus.studyEvidence ?? []} priorities={academicPriorities(plannerInput, activeTerm)} disabled={plannerDisabled}
+                onRecord={record => { if (!plannerDisabled) setCampus(current => ({ ...current, studyEvidence: addEvidence(current.studyEvidence ?? [], record) })); }} /> : undefined}
               onReviewSources={() => setView("inbox")}
               onBuildBrief={hydrated && !plannerDisabled ? () => academicBrief(plannerInput, activeTerm) : undefined}
               academic={hydrated ? { items: academicPriorities(plannerInput, activeTerm), onOpen: item => {
@@ -4448,6 +4453,7 @@ function hasMeaningfulState(state: SavedState) {
     || campus.exams.length
     || campus.attendanceRecords.length
     || campus.studyTasks.length
+    || campus.studyEvidence?.length
     || campus.gpaProfile.plans.length
     || campus.degreePlan.categories.length
     || state.inbox?.records.length
