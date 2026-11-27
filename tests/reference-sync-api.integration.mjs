@@ -35,7 +35,7 @@ try {
     if (Date.now() > deadline || server.exitCode !== null) throw new Error(logs.join(""));
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
-  const local = { activeTerm:"T", courses: [{id:"c1",title:"Test course",term:"T",weekday:1,period:1}], campus:{assignments:[],exams:[],attendanceRecords:[],studyEvidence:[]}, sessions: [{ id: "lecture-1", scheduledOn: "2026-10-09", hasPdf: true, fileName: "lecture.pdf", pageCount: 10, lastPdfPage: 7, pageTexts: ["not uploaded"], topics: [{ title: "not uploaded" }], noteText: "lecture note" }], memos: [{ id: "memo-1", sessionId: "lecture-1", page: 7, text: "page seven memo", checklist: [{ id: "check-1", text: "review proof", done: false, registered: true, due: "2026-10-09", priority: true, workAt: "", deletedAt: null }] }], planner: { version: 1, todos: [{ id: "personal-1", text: "review material", done: false, registered: true, due: "", priority: false, workAt: "", deletedAt: null, courseId: "", tags: ["review"] }], events: [{ id: "event-1", title: "appointment", start: "2026-10-10", end: "", note: "", deletedAt: null }] } };
+  const local = { activeTerm:"T", courses: [{id:"c1",title:"Test course",term:"T",code:"TEST1",weekday:1,period:1}], campus:{assignments:[],exams:[],attendanceRecords:[],studyEvidence:[]}, sessions: [{ id: "lecture-1", scheduledOn: "2026-10-09", hasPdf: true, fileName: "lecture.pdf", pageCount: 10, lastPdfPage: 7, pageTexts: ["not uploaded"], topics: [{ title: "not uploaded" }], noteText: "lecture note" }], memos: [{ id: "memo-1", sessionId: "lecture-1", page: 7, text: "page seven memo", checklist: [{ id: "check-1", text: "review proof", done: false, registered: true, due: "2026-10-09", priority: true, workAt: "", deletedAt: null }] }], planner: { version: 1, todos: [{ id: "personal-1", text: "review material", done: false, registered: true, due: "", priority: false, workAt: "", deletedAt: null, courseId: "", tags: ["review"] }], events: [{ id: "event-1", title: "appointment", start: "2026-10-10", end: "", note: "", deletedAt: null }] } };
   const imported = (type, summary, data, id) => ({
     id, collection: "gunma-course-review-2026", updatedAt: "2026-11-26T04:19:12+09:00",
     item: { id, type, title: id, term: "T", summary, data,
@@ -85,7 +85,7 @@ try {
   const rpc=(method,params={},token,extra={})=>request("/mcp",{method:"POST",headers:{"content-type":"application/json",...(token?{authorization:"Bearer "+token}:{}),...extra},body:JSON.stringify({jsonrpc:"2.0",id:1,method,params})});
   const call=(name,args,token)=>rpc("tools/call",{name,arguments:args},token);
   assert.equal((await rpc("initialize",{protocolVersion:"2025-11-25"})).body.result.protocolVersion,"2025-11-25");
-  assert.equal((await rpc("tools/list")).body.result.tools.length,6);
+  assert.equal((await rpc("tools/list")).body.result.tools.length,8);
   assert.equal((await rpc("tools/list",{},undefined,{origin:"https://evil.example.test"})).status,403);
   assert.equal((await call("get_academic_summary",{})).body.result.isError,true);
   const db=new DatabaseSync(path.join(directory,"test.sqlite"));
@@ -119,6 +119,16 @@ try {
     assert.match(observed.find(item => item.id === "evaluation-fixture").summary, /Report 40%; attendance required; lesson 7/);
     const attendance={expectedRevision:1,courseId:"c1",confirmed:true,day:"2026-10-09",status:"present",expectedStatus:null};
     assert.equal((await call("record_attendance",attendance,readToken.body.access_token)).body.result.isError,true);
+    const otherReadToken=await exchange(seed("manabi.read"));
+    const firstDetail=await call("get_course_academic_detail",{courseId:"c1"},readToken.body.access_token);
+    const secondDetail=await call("get_course_academic_detail",{courseId:"c1"},otherReadToken.body.access_token);
+    assert.equal(firstDetail.body.result.isError,false,JSON.stringify(firstDetail.body));
+    assert.deepEqual(firstDetail.body.result.structuredContent,secondDetail.body.result.structuredContent);
+    assert.equal(firstDetail.body.result.structuredContent.data.course.id,"c1");
+    assert.equal(firstDetail.body.result.structuredContent.data.records.length,3);
+    assert.equal(firstDetail.body.result.structuredContent.data.records[0].evidence[0].summary,"Conflicting deadline");
+    assert.ok(!JSON.stringify(firstDetail.body).includes("private.example.test"));
+    assert.equal((await call("get_course_academic_detail",{courseId:"missing"},otherReadToken.body.access_token)).body.result.isError,true);
     const writer=await exchange(seed("manabi.read manabi.write"));
     assert.equal(writer.status,200);
     const saved=await call("record_attendance",attendance,writer.body.access_token);

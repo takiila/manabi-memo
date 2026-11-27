@@ -1,7 +1,7 @@
 import 'server-only';
 import { NextResponse } from 'next/server';
 import { queryOne, withTransaction } from './database';
-import { academicSnapshot, applyAcademicCommand } from '../../app/academic-api-model';
+import { academicCourseDetail, academicSnapshot, applyAcademicCommand } from '../../app/academic-api-model';
 import { pdfVersionsFromState } from '../../app/pdf-sync-model';
 type StateRow={revision:number;schema_version:number;payload:string;updated_at:number;deleted_at:number|null;sync_complete:number;pdf_manifest:string};
 const json=(value:unknown,status=200)=>NextResponse.json(value,{status,headers:{'cache-control':'no-store'}});
@@ -11,11 +11,13 @@ function read(row:StateRow|null){
   if(row.schema_version>16)throw new Error('保存形式が新しいため読み取れません。');
   return JSON.parse(row.payload) as unknown;
 }
-export async function readAcademicAccount(accountId:string){
+export async function readAcademicAccount(accountId:string, detail?: {courseId:string;offset:number}){
   try{
     const row=await queryOne<StateRow>(select,[accountId]);
     const state=read(row);
-    return json({ok:true,revision:row!.revision,syncedAt:new Date(row!.updated_at).toISOString(),coverage:'synced-snapshot-only',data:academicSnapshot(state)});
+    const data = detail ? academicCourseDetail(state, detail.courseId, detail.offset) : academicSnapshot(state);
+    if (!data) return json({error:'科目を確認できません。'},404);
+    return json({ok:true,revision:row!.revision,syncedAt:new Date(row!.updated_at).toISOString(),coverage:'synced-snapshot-only',data});
   }catch{return json({error:'同期済みの学業情報を取得できません。'},409);}
 }
 export async function writeAcademicAccount(accountId:string,input:unknown,authorization?:{linkId:string;tokenHash:string}){

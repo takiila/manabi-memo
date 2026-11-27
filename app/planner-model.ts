@@ -1,5 +1,6 @@
 import type { AttendanceStatus, CampusState } from './campus-model';
 import type { InformationInbox } from './manabi-import-types';
+import { projectAcademicRecords } from './academic-records-model.ts';
 import { OUTCOME_LABELS, reviewTopics } from './learning-model.ts';
 
 export type ChecklistItem = { id: string; text: string; done: boolean; registered: boolean; due: string; priority: boolean; workAt: string; deletedAt: string | null };
@@ -12,16 +13,16 @@ export type PlannerSession = { id: string; courseId: string; sessionNumber: stri
 export type PlannerInput = { courses: PlannerCourse[]; sessions: PlannerSession[]; memos: PlannerMemo[]; campus: CampusState; planner: PlannerState; inbox: InformationInbox };
 export type TodoRow = { id: string; source: 'memo' | 'personal' | 'assignment' | 'study'; sourceId: string; itemId: string; title: string; done: boolean; due: string; priority: boolean; workAt: string; tags: string[]; courseId: string; courseTitle: string; term: string; sessionTitle: string; page: number | null };
 export type CalendarEntry = { id: string; title: string; kind: 'todo' | 'work' | 'assignment' | 'exam' | 'study' | 'class' | 'session' | 'event' | 'university'; at: string; end?: string; time: string; done: boolean; todoId?: string; sourceId?: string; url?: string; courseId?: string; sessionId?: string; detail: string };
-export function courseReviewWork(inbox: InformationInbox) {
-  return inbox.records.flatMap(record => {
-    const item = record.item;
-    if (!/^gunma-course-review-\d{4}$/.test(record.collection) || (item.type !== 'assignment' && item.type !== 'exam')) return [];
-    const value = item.extensions?.['x-lms-submission-status'];
-    const status = value === 'submitted' ? '提出済み' : value === 'overdue-unsubmitted' ? '未提出（LMS期限超過表示）'
-      : value === 'unsubmitted' ? '未提出' : '提出状況未確認';
-    return [{ id: record.id, title: item.title, type: item.type, term: item.term,
-      at: (item.type === 'assignment' ? item.data.due_at : item.data.starts_at) ?? '',
-      status, done: value === 'submitted', summary: item.summary, uncertainties: item.uncertainties, source: item.source }];
+export function courseReviewWork(state: Pick<PlannerInput, 'inbox' | 'courses' | 'campus'>, today?: string) {
+  const labels: Record<string, string> = { submitted: '提出済み', 'pending-release': '公開待ち', unsubmitted: '未提出', overdue: '期限超過・未提出', unknown: '提出状況未確認' };
+  return projectAcademicRecords(state.inbox, state.courses, state.campus, today).flatMap(row => {
+    if (row.kind !== 'assignment' && row.kind !== 'exam') return [];
+    if (!row.evidence.some(fact => /^(?:gunma-course-review|gunma-academic-history)-\d{4}$/.test(fact.collection))) return [];
+    return [{ id: row.inboxId, inboxIds: row.evidence.map(fact => fact.id), courseId: row.courseId, managedId: row.managedId,
+      title: row.title, type: row.kind, term: row.term, at: (row.kind === 'assignment' ? row.dueAt : row.startsAt) ?? '',
+      status: row.state ? labels[row.state] : '', pending: row.state === 'pending-release', releaseAt: row.releaseAt, done: row.state === 'submitted',
+      summary: row.evidence.map(fact => fact.summary).filter(Boolean).join('\n'),
+      uncertainties: [...new Set(row.evidence.flatMap(fact => fact.uncertainties))], source: row.source }];
   });
 }
 
@@ -138,9 +139,11 @@ export function calendarEntries(state: PlannerInput, month: string, term: string
     push({ id: `session:${session.id}`, title: `${course.title} · 第${session.sessionNumber}回`, kind: 'session', at: day, done: false, courseId: course.id, sessionId: session.id, detail: session.title });
   }
   for (const event of state.planner.events) if (!event.deletedAt) push({ id: `event:${event.id}`, title: event.title, kind: 'event', at: event.start, end: event.end, done: false, sourceId: event.id, detail: event.note });
-  const reviewedWork = new Map(courseReviewWork(state.inbox).map(work => [work.id, work]));
+  const reviewedWork = new Map(courseReviewWork(state).flatMap(work => work.inboxIds.map(id => [id, work] as const)));
   for (const record of state.inbox.records) {
     const item = record.item;
+    const work = reviewedWork.get(record.id);
+    if (work && (work.id !== record.id || work.managedId || work.pending)) continue;
     if (term !== 'all' && item.term && item.term !== term) continue;
     let at = ''; let end = '';
     switch (item.type) {
@@ -150,6 +153,7 @@ export function calendarEntries(state: PlannerInput, month: string, term: string
       case 'registration': at = item.data.opens_at ?? ''; end = item.data.closes_at ?? ''; break;
       case 'seminar': at = item.data.guidance_at ?? item.data.application_start ?? ''; end = item.data.application_end ?? ''; break;
     }
+    if (work) at = work.at;
     if (at) push({ id: `inbox:${record.id}`, title: item.title, kind: 'university', at, end, done: reviewedWork.get(record.id)?.done ?? false, sourceId: record.id, url: item.source.url ?? '', detail: `${record.collection} · ${item.source.title}` });
   }
   const last = new Date(`${month}-01T12:00:00Z`); last.setUTCMonth(last.getUTCMonth() + 1); last.setUTCDate(0);
@@ -267,19 +271,20 @@ export function academicPriorities(state: PlannerInput, term: string, now = new 
       group: !valid ? 'review' : displayDay(exam.datetime) <= tomorrow ? 'urgent' : 'upcoming', source: 'exam',
       reason: !valid ? '試験日未確認' : '試験準備・範囲と理解度を確認' + (exam.datetime.length === 10 ? '（時刻未設定）' : ''), courseId: course.id });
   }
-  const reviewedWork = new Map(courseReviewWork(state.inbox).map(work => [work.id, work]));
+  const reviewedWork = new Map(courseReviewWork(state, today).flatMap(work => work.inboxIds.map(id => [id, work] as const)));
   for (const record of state.inbox.records) {
     const item = record.item;
     const work = reviewedWork.get(record.id);
-    if (work?.done) continue;
+    if (work && (work.id !== record.id || work.managedId || work.done)) continue;
     if (!matchingTerm(item.term)) continue;
     if (item.type !== 'assignment' && item.type !== 'deadline' && item.type !== 'exam') continue;
-    const at = (item.type === 'exam' ? item.data.starts_at : item.data.due_at) ?? '';
+    const at = work ? work.at : (item.type === 'exam' ? item.data.starts_at : item.data.due_at) ?? '';
     let group: AcademicPriority['group'] | null = deadline(at);
     if (item.type === 'exam') {
       const valid = isPlannerDate(at, false);
       group = !valid ? 'review' : displayDay(at) < today ? null : displayDay(at) <= tomorrow ? 'urgent' : displayDay(at) <= examWindow ? 'upcoming' : null;
     }
+    if (work?.pending) group = 'review';
     if (!group) continue;
     result.push({ id: 'inbox:' + record.id, title: item.title, courseTitle: item.source.title, at: isPlannerDate(at, false) ? at : '', group,
       source: work?.type === 'exam' && group !== 'review' ? 'exam' : work?.status === '未提出' && group !== 'review' ? 'task' : 'inbox', reason: (item.type === 'exam' ? '試験情報・原資料を照合' : deadlineReason(group, at)) + (work?.type === 'assignment' ? '／' + work.status : '／履修・提出状態の紐付け未確認') });

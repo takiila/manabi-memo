@@ -49,8 +49,9 @@ export async function POST(request:Request){
      const scope=command.read?READ_SCOPE:READ_SCOPE+' '+WRITE_SCOPE;
      return toolResult(id,{error:'認証・連携権限を確認してください。データは変更していません。'},false,modern,{'mcp/www_authenticate':['Bearer resource_metadata="'+config.issuer+'/.well-known/oauth-protected-resource", scope="'+scope+'", error="invalid_token", error_description="Manabi authorization required"']});
    }
-   const result=command.read?await readAcademicAccount(auth.accountId):await writeAcademicAccount(auth.accountId,command.input,auth);
+   const detail=command.read&&'courseId' in command&&command.courseId?{courseId:command.courseId,offset:command.offset??0}:undefined;
+   const result=command.read?await readAcademicAccount(auth.accountId,detail):await writeAcademicAccount(auth.accountId,command.input,auth);
    const value=await result.json();
-   return toolResult(id,command.read&&result.ok?compactSummary(value,command.term):value,result.ok,modern);
+   return toolResult(id,command.read&&!detail&&result.ok?compactSummary(value,command.term):value,result.ok,modern);
  }catch{return toolResult(id,{error:'学業情報の取得・更新に失敗しました。成功したとは報告しないでください。'},false,modern);}
 }

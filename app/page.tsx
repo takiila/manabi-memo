@@ -4454,6 +4454,7 @@ function hasMeaningfulState(state: SavedState) {
     || campus.attendanceRecords.length
     || campus.studyTasks.length
     || campus.studyEvidence?.length
+    || campus.academicCorrections?.length
     || campus.gpaProfile.plans.length
     || campus.degreePlan.categories.length
     || state.inbox?.records.length

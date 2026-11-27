@@ -311,7 +311,7 @@ test('ChatGPT連携のOAuthは固定HTTPS先・PKCE・resource・scopeを要求�
 
 test('MCPツールは未確認の書き込みと未知の操作を拒否する',async()=>{
  const {toolCommand,validModernHeaders,compactSummary,academicTools}=await import('../app/academic-mcp-model.ts');
- assert.equal(academicTools.length,6);
+ assert.equal(academicTools.length,8);
  const args={expectedRevision:2,courseId:'c',confirmed:true,day:'2026-10-09',status:'present',expectedStatus:null};
  assert.equal(toolCommand('record_attendance',args).input.command.kind,'attendance');
  assert.throws(()=>toolCommand('record_attendance',{...args,confirmed:false}));
@@ -323,4 +323,47 @@ test('MCPツールは未確認の書き込みと未知の操作を拒否する',
  const summary=compactSummary({ok:true,data:{activeTerm:'T',courses:[{id:'a',term:'T'},{id:'b',term:'old'}],assignments:[{courseId:'b',title:'old'},{courseId:'a',title:'new'}]}});
  assert.equal(summary.data.courses.length,1);
  assert.equal(summary.data.assignments[0].title,'new');
+});
+test('科目別の大学記録を保存済み科目IDに結び、古い巡回から本人訂正を保護する', async () => {
+  const { academicPriorities, EMPTY_PLANNER } = await import('../app/planner-model.ts');
+  const { academicCourseDetail, applyAcademicCommand } = await import('../app/academic-api-model.ts');
+  const { normalizeCampusState } = await import('../app/campus-model.ts');
+  const { projectAcademicRecords, courseRecordTotals } = await import('../app/academic-records-model.ts');
+  const term = '2026年度 後期';
+  const courses = [{ id: 'existing-course', title: '論理設計', term }];
+  const source = { kind: 'web', title: '模擬LMS' };
+  const fact = (id, type, title, summary, extensions = {}, data = {}) => ({
+    id: 'inbox:' + id, collection: id.startsWith('history') ? 'gunma-academic-history-2026' : 'gunma-course-review-2026',
+    item: { id, type, title, summary, term, source, extensions, data, uncertainties: ['模擬資料との確認が必要'] },
+    updatedAt: '2026-11-26T00:00:00Z', history: [],
+  });
+  const report = fact('lms.assign.71364', 'assignment', '論理設計｜レポート課題', '12/4の第8回講義後に公開。期限欄と不一致。',
+    { 'x-lms-submission-status': 'overdue-unsubmitted' }, { course_code: 'JB5011', due_at: '2026-11-15' });
+  const history = fact('history.assign.71364', 'announcement', '論理設計｜レポート課題の提出履歴', 'LMS表示は未提出。告知12/4公開。');
+  const input = { courses, campus: {}, inbox: { version: 1, records: [report, history] } };
+  const [before] = projectAcademicRecords(input.inbox, courses, { assignments: [], exams: [] }, '2026-11-27');
+  assert.equal(before.state, 'pending-release');
+  assert.equal(before.dueAt, null);
+  assert.equal(before.evidence.length, 2);
+  const plannerInput = { ...input, planner: EMPTY_PLANNER, memos: [], sessions: [], campus: normalizeCampusState({}) };
+  const priorities = academicPriorities(plannerInput, term, new Date('2026-11-27T00:00:00+09:00'));
+  assert.equal(priorities.filter(row => row.title.includes('レポート課題')).length, 1);
+  assert.equal(priorities.find(row => row.title.includes('レポート課題')).group, 'review');
+  assert.equal(projectAcademicRecords(input.inbox, courses, { assignments: [], exams: [] }, '2026-12-05')[0].state, 'unknown');
+  const next = applyAcademicCommand(input, { kind: 'academic_correction', courseId: courses[0].id, recordId: before.id,
+    correctionId: 'report-1', confirmed: true, value: 'submitted', reason: '本人が模擬提出を確認' }, '2026-12-05', '2026-12-05T01:00:00Z');
+  const restored = JSON.parse(JSON.stringify({ ...next, campus: normalizeCampusState(next.campus) }));
+  const otherSession = academicCourseDetail(restored, courses[0].id, 0);
+  assert.equal(otherSession.records[0].state, 'submitted');
+  assert.equal(otherSession.records[0].correctionHistory.length, 1);
+  assert.equal(otherSession.records[0].evidence.length, 2);
+  assert.equal(otherSession.totals.assignment.submitted, 1);
+  assert.equal(academicCourseDetail(restored, 'unknown-course', 0), null);
+  assert.deepEqual(restored.inbox, input.inbox);
+  const lateWork = [1, 2, 3, 4].map(i => fact('lms.assign.' + i, 'assignment', '論理設計｜課題' + i, '模擬課題',
+    { 'x-lms-submission-status': 'submitted', 'x-late-submission': true, 'x-attendance-assignment': i !== 4 }));
+  const records = projectAcademicRecords({ version: 1, records: lateWork }, courses, { assignments: [], exams: [] }, '2026-11-27');
+  assert.equal(courseRecordTotals(records).lateAttendanceAssignmentRule.provisionalAbsenceEquivalent, 1);
+  lateWork[0].item.extensions['x-official-attendance-rule'] = '正式基準を優先';
+  assert.equal(courseRecordTotals(projectAcademicRecords({ version: 1, records: lateWork }, courses, { assignments: [], exams: [] })).lateAttendanceAssignmentRule.provisionalAbsenceEquivalent, null);
 });

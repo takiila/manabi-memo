@@ -1,6 +1,9 @@
 import { isPlannerDate } from './planner-model.ts';
 import { normalizeStudyEvidence, type StudyEvidence } from './learning-model.ts';
 
+import { courseRecordTotals, normalizeAcademicCorrections, projectAcademicRecords, correctionValues, type AcademicCorrection } from './academic-records-model.ts';
+import type { InformationInbox } from './manabi-import-types';
+
 function record(value:unknown):value is Record<string,unknown>{return Boolean(value&&typeof value==='object'&&!Array.isArray(value));}
 function rows(value:unknown):Record<string,unknown>[] {
   if(value===undefined)return [];
@@ -13,6 +16,37 @@ function required(value:unknown,max=180):string {
 }
 function fields(row:Record<string,unknown>, keys:string[]){return Object.fromEntries(keys.flatMap(key=>typeof row[key]==='string'||typeof row[key]==='number'||row[key]===null?[[key,row[key]]]:[]));}
 function activeCourses(state:Record<string,unknown>){return rows(state.courses).filter(row=>!row.deletedAt&&!row.archivedAt);}
+function academicRecords(state: Record<string, unknown>, today?: string) {
+  const courses = activeCourses(state).flatMap(row => typeof row.id === 'string' && typeof row.title === 'string' && typeof row.term === 'string'
+    ? [{ id: row.id, title: row.title, term: row.term, code: typeof row.code === 'string' ? row.code : undefined }] : []);
+  const campus = record(state.campus) ? state.campus : {};
+  const managed = (value: unknown) => rows(value).flatMap(row => typeof row.id === 'string' && typeof row.courseId === 'string' && typeof row.title === 'string'
+    ? [{ id: row.id, courseId: row.courseId, title: row.title, status: typeof row.status === 'string' ? row.status : undefined }] : []);
+  return projectAcademicRecords((state.inbox ?? { version: 1, records: [] }) as InformationInbox, courses, {
+    assignments: managed(campus.assignments), exams: managed(campus.exams), academicCorrections: normalizeAcademicCorrections(campus.academicCorrections),
+  }, today);
+}
+
+export function academicCourseDetail(state: unknown, courseId: string, offset: number) {
+  const snapshot = academicSnapshot(state);
+  const course = snapshot.courses.find(row => row.id === courseId);
+  if (!course || !record(state)) return null;
+  const linked = academicRecords(state).filter(row => row.courseId === courseId);
+  const attendance = snapshot.attendance.filter(row => row.courseId === courseId);
+  const statusCount = (status: string) => attendance.filter(row => row.status === status).length;
+  const pageSize = 20;
+  return {
+    course, totals: { ...courseRecordTotals(linked), recordedAttendance: { present: statusCount('present'), late: statusCount('late'), absent: statusCount('absent') } },
+    attendance, assignments: snapshot.assignments.filter(row => row.courseId === courseId),
+    exams: snapshot.exams.filter(row => row.courseId === courseId),
+    records: linked.slice(offset, offset + pageSize).map(({ source, ...row }) => ({
+      ...row, source: { kind: source.kind, title: source.title, locator: source.locator ?? null },
+    })),
+    offset, nextOffset: offset + pageSize < linked.length ? offset + pageSize : null, totalRecords: linked.length,
+    notice: '同期した資料と本人記録。未取得・未記録は欠席や未提出を意味しません。大学側の現在値は未照合です。',
+  };
+}
+
 export function academicSnapshot(state:unknown) {
   if(!record(state)||!record(state.campus))throw new Error('学業データを確認できません。');
   const courses=activeCourses(state);
@@ -49,6 +83,23 @@ export function applyAcademicCommand(state:unknown,command:unknown,today:string,
   if(courses.length!==1)throw new Error('科目を一意に特定できません。');
   const course=courses[0];
   const replace=(key:string,value:unknown)=>({...state,campus:{...campus,[key]:value}});
+  if (command.kind === 'academic_correction') {
+    const id = required(command.correctionId);
+    const recordId = required(command.recordId);
+    const reason = required(command.reason, 500);
+    const value = command.value as AcademicCorrection['value'];
+    const target = academicRecords(state, today).find(row => row.id === recordId && row.courseId === courseId);
+    const permitted = target?.kind === 'attendance' ? ['present', 'late', 'absent', 'unknown']
+      : target?.kind === 'assignment' ? ['submitted', 'unsubmitted', 'unknown'] : [];
+    if (!correctionValues.includes(value) || !permitted.includes(value)) throw new Error('対象と訂正内容を確認してください。');
+    const history = normalizeAcademicCorrections(campus.academicCorrections);
+    const existing = history.find(row => row.id === id);
+    if (existing) {
+      if (existing.courseId === courseId && existing.recordId === recordId && existing.value === value && existing.reason === reason) return state;
+      throw new Error('同じIDの訂正があります。');
+    }
+    return replace('academicCorrections', [...history, { id, courseId, recordId, value, reason, recordedAt: createdAt }]);
+  }
   if(command.kind==='assignment_create'||command.kind==='exam_create'){
     const isExam=command.kind==='exam_create';
     const id=required(command.recordId);

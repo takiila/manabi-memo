@@ -38,12 +38,12 @@ export function PlannerPanel({ state, disabled, onPatch, onPlanner, onMemo, onCo
   </section>;
 }
 function CourseReviewTasks({ state }: { state: PlannerInput }) {
-  const work = courseReviewWork(state.inbox);
+  const work = courseReviewWork(state).filter(item => !item.managedId);
   if (!work.length) return null;
   return <details className="todo-card" open><summary>大学から取り込んだ課題・試験（{work.length}件）</summary>
     {work.map(item => <article key={item.id}>
       <strong>{item.title}</strong>
-      <p>{item.at ? localPlannerDateTime(item.at).replace('T', ' ') : '日時未確認'}{item.type === 'assignment' && ' · ' + item.status}</p>
+      <p>{item.at ? localPlannerDateTime(item.at).replace('T', ' ') : item.pending && item.releaseAt ? item.releaseAt + ' 公開予定' : '日時未確認'}{item.type === 'assignment' && ' · ' + item.status}</p>
       {item.summary && <p>{item.summary}</p>}
       {item.uncertainties?.map(value => <p key={value}>{value}</p>)}
       {item.source.url && <a href={item.source.url} target="_blank" rel="noreferrer">出典を確認</a>}
